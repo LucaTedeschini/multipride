@@ -1,0 +1,13 @@
+pandas
+numpy
+transformers
+torch
+scikit-learn
+ipywidgets
+datasets
+accelerate
+evaluate
+seaborn
+matplotlib
+google-generativeai
+load-dotenv
