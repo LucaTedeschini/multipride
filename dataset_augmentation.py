@@ -7,18 +7,19 @@ import time
 load_dotenv()
 client = OpenAI(api_key=os.environ.get('DEEPSEEK_API_KEY'), base_url="https://api.deepseek.com")
 
-system_prompt = """Sei un annotatore per un task di classificazione. In input riceverai la bio di un utente Twitter e alcuni suoi tweet.
-Il tuo compito è decidere se l'utente in questione fa parte o meno della comunità LGBT.
-Basa la tua scelta sul modo di scrivere, sul contenuto della bio e dei tweet, e su tutti i fattori che ritieni rilevanti.
-L'input che ti fornirò sarà nel formato TWEET - BIO.
-L'output che voglio è semplicemente un numero:
-0 se l'utente NON appartiene alla comunità LGBT,
-1 se invece appartiene alla comunità.
-Esempio di interazione:
-INPUT: "fuck gender rules and the rules of society || bts || exo" - "pansexual, genderqueer and polyamorous 🏳️‍🌈 || she/her || unito dams"
-OUTPUT: 1"""
+system_prompt = """Eres un anotador para una tarea de clasificación. En la entrada recibirás la biografía de un usuario de Twitter y algunos de sus tuits.  
+Tu tarea es decidir si el usuario en cuestión forma parte o no de la comunidad LGBT.  
+Basarás tu decisión en la forma de escribir, el contenido de la biografía y de los tuits, y en todos los factores que consideres relevantes.  
+La entrada que te proporcionaré tendrá el formato TWEET - BIO.  
+La salida que quiero es simplemente un número:  
+0 si el usuario NO pertenece a la comunidad LGBT,  
+1 si sí pertenece a la comunidad.  
+Ejemplo de interacción:  
+ENTRADA: "fuck gender rules and the rules of society || bts || exo" - "pansexual, genderqueer and polyamorous 🏳️‍🌈 || she/her || unito dams"  
+SALIDA: 1"""
 
-ita = pd.read_csv("dataset/train_it.csv")
+
+ita = pd.read_csv("dataset/train_es.csv")
 lgbt = []
 c = 0
 
@@ -59,4 +60,4 @@ for text, bio in zip(ita["text"], ita["bio"]):
 
 ita["lgbt"] = lgbt
 print(ita.head())
-ita.to_csv("augmented.csv", index=False)
+ita.to_csv("augmented_es.csv", index=False)
