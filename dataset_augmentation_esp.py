@@ -3,9 +3,16 @@ import os
 from dotenv import load_dotenv
 from openai import OpenAI
 import time
+from rich.console import Console
+from rich.progress import track
 
+### Setup ###
+console = Console()
 load_dotenv()
-client = OpenAI(api_key=os.environ.get('DEEPSEEK_API_KEY'), base_url="https://api.deepseek.com")
+client = OpenAI(
+    api_key=os.environ.get('DEEPSEEK_API_KEY'), 
+    base_url="https://api.deepseek.com"
+)
 
 system_prompt = """Eres un anotador para una tarea de clasificación. En la entrada recibirás la biografía de un usuario de Twitter y algunos de sus tuits.  
 Tu tarea es decidir si el usuario en cuestión forma parte o no de la comunidad LGBT.  
@@ -17,21 +24,21 @@ La salida que quiero es simplemente un número:
 Ejemplo de interacción:  
 ENTRADA: "fuck gender rules and the rules of society || bts || exo" - "pansexual, genderqueer and polyamorous 🏳️‍🌈 || she/her || unito dams"  
 SALIDA: 1"""
+################
 
-
+## Data Loading ##
+console.print("[bold]Loading dataset...[/bold]")
 ita = pd.read_csv("dataset/train_es.csv")
-lgbt = []
-c = 0
+console.print("[bold green]Dataset loaded.[/bold green]")
 
-for text, bio in zip(ita["text"], ita["bio"]):
-    c += 1
-    print(f"{c} / {len(ita)}")
+## API Processing ##
+lgbt = []
+iterable = zip(ita["text"], ita["bio"])
+
+for text, bio in track(iterable, description="[cyan]Processing entries...[/cyan]", total=len(ita)):
     
-    if str(bio) == "nan":
-        bio = ""
-    
+    bio = "" if str(bio) == "nan" else bio
     user_message = f'"{text}" - "{bio}"'
-    print(user_message)
     
     try:
         response = client.chat.completions.create(
@@ -44,20 +51,22 @@ for text, bio in zip(ita["text"], ita["bio"]):
         )
         answer = response.choices[0].message.content.strip()
     except Exception as e:
-        print(f"Si è verificato un errore: {e}\n\nRiprovo tra 2 minuti...")
+        console.print(f"[bold red]An error occurred: {e}\nRetrying in 2 minutes...[/bold red]")
         answer = "error"
         time.sleep(120)
     
-    if answer == "1" or answer == "0":
+    if answer in ["1", "0"]:
         answer = int(answer)
     else:
+        # Mark ambiguous/error responses
         answer = 0.5
     
     lgbt.append(answer)
-    print(answer)
-    print("--" * 20)
     time.sleep(0.5)
 
+## Finalizing ##
 ita["lgbt"] = lgbt
-print(ita.head())
+console.print("\n[bold yellow]Saving augmented dataset...[/bold yellow]")
 ita.to_csv("augmented_es.csv", index=False)
+console.print("[bold green]:white_check_mark: File saved as [cyan]augmented_es.csv[/cyan][/bold green]")
+console.print(ita.head())
