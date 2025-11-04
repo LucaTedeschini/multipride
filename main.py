@@ -30,13 +30,21 @@ from rich import print
 import questionary
 import sys
 
+# Used by spanish model
+from pysentimiento.preprocessing import preprocess_tweet
+
 ### Setup ###
 console = Console()
 disable_progress_bars()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "true"
 device = "cuda" if torch.cuda.is_available() else "cpu"
+model_name = 'pysentimiento/robertuito-base-cased'
 model_name = "Twitter/twhin-bert-base"
+model_name = "nickprock/setfit-italian-hate-speech"
+# VERY IMPORTANT: if using the spanish model pysentimiento/robertuito... set this flag to TRUE
+# TODO: automatically set the flag
+spanish = False
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 ###########################################################
@@ -74,6 +82,13 @@ else:
     dataset = pd.concat(datasets_to_train, ignore_index=True)
     dataset['bio'] = dataset['bio'].fillna('')
     console.print(f"[bold green]Datasets loaded and combined. Total length: [cyan]{len(dataset)}[/cyan][/bold green]")
+
+if spanish:
+    dataset["text"] = dataset["text"].apply(lambda x: preprocess_tweet(x, lang="es"))
+    dataset["bio"] = dataset["bio"].apply(lambda x: preprocess_tweet(x, lang="es"))
+
+
+print(dataset["text"])
 
 ## Data Splitting ##
 pre_train_df, pre_test_df = train_test_split(
