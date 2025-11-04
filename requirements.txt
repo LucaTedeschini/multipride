@@ -10,4 +10,7 @@ evaluate
 seaborn
 matplotlib
 google-generativeai
-load-dotenv
+rich
+questionary
+pysentimiento
+

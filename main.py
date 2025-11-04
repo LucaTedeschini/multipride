@@ -38,7 +38,9 @@ console = Console()
 disable_progress_bars()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "true"
-device = "cuda" if torch.cuda.is_available() else "cpu"
+#AMD FIX
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+device = "cuda:0" if torch.cuda.is_available() else "cpu"
 model_name = 'pysentimiento/robertuito-base-cased'
 model_name = "Twitter/twhin-bert-base"
 model_name = "nickprock/setfit-italian-hate-speech"
