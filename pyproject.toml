@@ -1,0 +1,11 @@
+[project]
+name = "multipride"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "black[jupyter]>=25.9.0",
+    "numpy>=2.2.6",
+    "torch-tb-profiler>=0.4.3",
+]

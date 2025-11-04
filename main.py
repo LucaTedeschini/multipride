@@ -1,89 +1,107 @@
+import argparse
+import gc
+import os
+from datetime import datetime
+from typing import List
+
+import matplotlib.pyplot as plt
+import numpy as np
 import pandas as pd
+import seaborn as sns
 import torch
-from torch import nn
-from sklearn.model_selection import train_test_split
-from transformers import (
-    AutoTokenizer,
-    AutoModel,
-    Trainer,
-    AutoModelForSequenceClassification,
-    TrainingArguments,
-    EarlyStoppingCallback,
-    PreTrainedModel,
-    AutoConfig,
-    DataCollatorWithPadding,
-)
-from transformers.modeling_outputs import SequenceClassifierOutput
 from datasets import Dataset as HFDataset
 from evaluate import load as load_metric
-from huggingface_hub.utils import disable_progress_bars
-import os
-import gc
-import numpy as np
-from scipy.special import softmax
-import seaborn as sns
-import matplotlib.pyplot as plt
-from sklearn.metrics import confusion_matrix
-from rich.console import Console
-from rich.table import Table
-from rich import print
-import questionary
-import sys
+from huggingface_hub.utils.tqdm import disable_progress_bars
 
 # Used by spanish model
 from pysentimiento.preprocessing import preprocess_tweet
+from rich import print
+from rich.console import Console
+from rich.table import Table
+from scipy.special import softmax
+from sklearn.metrics import confusion_matrix
+from sklearn.model_selection import train_test_split
+from torch import nn
+from transformers import (
+    AutoConfig,
+    AutoModel,
+    AutoModelForSequenceClassification,
+    AutoTokenizer,
+    EarlyStoppingCallback,
+    PreTrainedModel,
+    Trainer,
+    TrainingArguments,
+)
+from transformers.modeling_outputs import SequenceClassifierOutput
 
 ### Setup ###
 console = Console()
 disable_progress_bars()
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "true"
-#AMD FIX
+# AMD FIX
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
-model_name = 'pysentimiento/robertuito-base-cased'
+model_name = "pysentimiento/robertuito-base-cased"
 model_name = "Twitter/twhin-bert-base"
 model_name = "nickprock/setfit-italian-hate-speech"
 # VERY IMPORTANT: if using the spanish model pysentimiento/robertuito... set this flag to TRUE
 # TODO: automatically set the flag
-spanish = False
+spanish = True
 tokenizer = AutoTokenizer.from_pretrained(model_name)
 
 ###########################################################
 ### Stage 1: Pre-train on LGBT attribute identification ###
 ###########################################################
 
-console.print(
-    "[bold underline purple]Starting Stage 1: Pre-training for LGBT attribute[/bold underline purple]"
+MODELS: List[str] = [
+    "nickprock/setfit-italian-hate-speech",
+    "pysentimiento/robertuito-base-cased",
+    "Twitter/twhin-bert-base",
+]
+
+parser = argparse.ArgumentParser(description="Pre-train a model to identify LGBT-related content.")
+parser.add_argument(
+    "--lang",
+    type=str,
+    choices=["it", "es", "both"],
+    default="it",
+    help="Language of the dataset to use for pre-training (default: it).",
 )
+parser.add_argument(
+    "--model",
+    type=str,
+    choices=MODELS,
+    default="nickprock/setfit-italian-hate-speech",
+    help="Model to use for pre-training (default: nickprock/setfit-italian-hate-speech).",
+)
+args = parser.parse_args()
+
+console.print("[bold underline purple]Starting Stage 1: Pre-training for LGBT attribute[/bold underline purple]")
+
+dataset_map = {
+    "it": pd.read_csv("dataset/augmented_it.csv"),
+    "es": pd.read_csv("dataset/augmented_es.csv"),
+    "both": pd.concat(
+        [
+            pd.read_csv("dataset/augmented_it.csv"),
+            pd.read_csv("dataset/augmented_es.csv"),
+        ],
+        ignore_index=True,
+    ),
+}
 
 ## Data Loading ##
 console.print("[bold]Loading augmented datasets...[/bold]")
-ita = pd.read_csv("dataset/augmented_it.csv")
-esp = pd.read_csv("dataset/augmented_es.csv")
 console.print("[bold green]All datasets available.[/bold green]")
 
-dataset_map = {
-    "Italian": ita,
-    "Spanish": esp,
-}
+selected_languages = args.lang
+console.print(f"\n:white_check_mark: [bold green]Selected:[/bold green] {', '.join(selected_languages)}\n")
 
-selected_languages = questionary.checkbox(
-    "Select on which dataset(s) you want to train the model:",
-    choices=list(dataset_map.keys())
-).ask()
+dataset = dataset_map[args.lang]
 
-if not selected_languages:
-    console.print("[bold red]No datasets selected. Exiting...[/bold red]")
-    sys.exit()
-else:
-    console.print(f"\n:white_check_mark: [bold green]Selected:[/bold green] {', '.join(selected_languages)}\n")
-
-    datasets_to_train = [dataset_map[lang] for lang in selected_languages]
-    
-    dataset = pd.concat(datasets_to_train, ignore_index=True)
-    dataset['bio'] = dataset['bio'].fillna('')
-    console.print(f"[bold green]Datasets loaded and combined. Total length: [cyan]{len(dataset)}[/cyan][/bold green]")
+dataset["bio"] = dataset["bio"].fillna("")
+console.print(f"[bold green]Datasets loaded and combined. Total length: [cyan]{len(dataset)}[/cyan][/bold green]")
 
 if spanish:
     dataset["text"] = dataset["text"].apply(lambda x: preprocess_tweet(x, lang="es"))
@@ -93,9 +111,8 @@ if spanish:
 print(dataset["text"])
 
 ## Data Splitting ##
-pre_train_df, pre_test_df = train_test_split(
-    dataset, test_size=0.3, stratify=dataset["lgbt"], random_state=42
-)
+pre_train_df, pre_test_df = train_test_split(dataset, test_size=0.3, stratify=dataset["lgbt"], random_state=42)
+
 
 ## Tokenization ##
 def tokenize(batch):
@@ -107,11 +124,19 @@ def tokenize(batch):
         max_length=128,
     )
 
+
 train_ds = HFDataset.from_pandas(pre_train_df).map(tokenize, batched=True)
 test_ds = HFDataset.from_pandas(pre_test_df).map(tokenize, batched=True)
-train_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "lgbt"], output_all_columns=True)
-test_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "lgbt"], output_all_columns=True)
-
+train_ds.set_format(
+    type="torch",
+    columns=["input_ids", "attention_mask", "lgbt"],
+    output_all_columns=True,
+)
+test_ds.set_format(
+    type="torch",
+    columns=["input_ids", "attention_mask", "lgbt"],
+    output_all_columns=True,
+)
 
 ## Class Weight Computation ##
 label_counts = pre_train_df["lgbt"].value_counts().to_dict()
@@ -125,6 +150,7 @@ console.print("[bold yellow]Loading model for pre-training...[/bold yellow]")
 model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2).to(device)
 console.print("[bold green]Model loaded![/bold green]")
 
+
 class WeightedTrainer(Trainer):
     def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
         labels = inputs.pop("labels")
@@ -134,8 +160,10 @@ class WeightedTrainer(Trainer):
         loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
         return (loss, outputs) if return_outputs else loss
 
+
 accuracy_metric = load_metric("accuracy")
 f1_metric = load_metric("f1")
+
 
 def compute_metrics(eval_pred):
     logits, labels = eval_pred
@@ -144,6 +172,7 @@ def compute_metrics(eval_pred):
         "accuracy": accuracy_metric.compute(predictions=preds, references=labels)["accuracy"],
         "f1": f1_metric.compute(predictions=preds, references=labels)["f1"],
     }
+
 
 ## Training ##
 training_args = TrainingArguments(
@@ -160,6 +189,9 @@ training_args = TrainingArguments(
     logging_dir="./logs_lgbt_pretrain",
     logging_steps=50,
     save_total_limit=2,
+    seed=42,
+    report_to="tensorboard",
+    run_name=f"lgbt_pretraining_{args.lang}_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
 )
 
 trainer = WeightedTrainer(
@@ -184,9 +216,11 @@ console.print(
     "\n[bold underline purple]Starting Stage 2: Dual Encoder for Reclamatory Classification[/bold underline purple]"
 )
 
+
 ## Dual Encoder Model Definition ##
 class DualEncoderForSequenceClassification(PreTrainedModel):
     config_class = AutoConfig
+
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
@@ -198,7 +232,7 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
             nn.Linear(hidden_size * 2, hidden_size),
             nn.Tanh(),
             nn.Linear(hidden_size, hidden_size),
-            nn.Sigmoid()
+            nn.Sigmoid(),
         )
         self.dropout = nn.Dropout(config.hidden_dropout_prob)
         self.classifier = nn.Linear(hidden_size, config.num_labels)
@@ -221,7 +255,11 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
 
         loss = None
         if labels is not None:
-            class_weights = torch.tensor(self.config.class_weights, device=self.device) if hasattr(self.config, 'class_weights') and self.config.class_weights is not None else None
+            class_weights = (
+                torch.tensor(self.config.class_weights, device=self.device)
+                if hasattr(self.config, "class_weights") and self.config.class_weights is not None
+                else None
+            )
             loss_fct = nn.CrossEntropyLoss(weight=class_weights)
             loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
 
@@ -231,10 +269,9 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
 
         return SequenceClassifierOutput(loss=loss, logits=logits)
 
+
 ## Main Task Data Preparation ##
-train_df, test_df = train_test_split(
-    dataset, test_size=0.3, stratify=dataset["label"], random_state=42
-)
+train_df, test_df = train_test_split(dataset, test_size=0.3, stratify=dataset["label"], random_state=42)
 
 train_ds = HFDataset.from_pandas(train_df).map(tokenize, batched=True)
 test_ds = HFDataset.from_pandas(test_df).map(tokenize, batched=True)
@@ -286,6 +323,8 @@ training_args = TrainingArguments(
     logging_dir="./logs_dual_encoder",
     logging_steps=50,
     save_total_limit=2,
+    report_to="tensorboard",
+    run_name=f"dual_encoder_{args.lang}_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
 )
 
 trainer = Trainer(
@@ -295,7 +334,7 @@ trainer = Trainer(
     eval_dataset=test_ds,
     tokenizer=tokenizer,
     compute_metrics=compute_metrics,
-    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)]
+    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
 )
 
 console.print("\n[bold yellow]Starting main task training...[/bold yellow]")
@@ -314,7 +353,10 @@ table.add_column("Metric", justify="left", style="cyan", no_wrap=True)
 table.add_column("Value", justify="right", style="magenta")
 
 for k, v in predictions_output.metrics.items():
-    table.add_row(k.replace("test_", "").capitalize(), f"{v:.4f}" if isinstance(v, float) else str(v))
+    table.add_row(
+        k.replace("test_", "").capitalize(),
+        f"{v:.4f}" if isinstance(v, float) else str(v),
+    )
 print(table)
 
 ## Error Analysis ##
@@ -325,24 +367,31 @@ probabilities = softmax(logits, axis=1)
 confidence_scores = np.max(probabilities, axis=1)
 
 results_df = test_df.copy()
-results_df['predicted_label'] = predicted_labels
-results_df['true_label'] = true_labels
-results_df['confidence'] = confidence_scores
-results_df['is_correct'] = (results_df['true_label'] == results_df['predicted_label'])
+results_df["predicted_label"] = predicted_labels
+results_df["true_label"] = true_labels
+results_df["confidence"] = confidence_scores
+results_df["is_correct"] = results_df["true_label"] == results_df["predicted_label"]
 
 output_filename = "error_analysis_results.csv"
-results_df.to_csv(output_filename, index=False, encoding='utf-8-sig')
+results_df.to_csv(output_filename, index=False, encoding="utf-8-sig")
 console.print(f"\n[bold green]Error analysis results saved to [cyan]'{output_filename}'[/cyan][/bold green]")
 
 ## Confusion Matrix ##
 console.print("\n[bold]Confusion Matrix:[/bold]")
 cm = confusion_matrix(true_labels, predicted_labels)
 print(cm)
-class_labels = ['Non-Reclamatory', 'Reclamatory']
+class_labels = ["Non-Reclamatory", "Reclamatory"]
 
 plt.figure(figsize=(8, 6))
-sns.heatmap(cm, annot=True, fmt='d', cmap='Blues', xticklabels=class_labels, yticklabels=class_labels)
-plt.title('Confusion Matrix')
-plt.ylabel('True Label')
-plt.xlabel('Predicted Label')
+sns.heatmap(
+    cm,
+    annot=True,
+    fmt="d",
+    cmap="Blues",
+    xticklabels=class_labels,
+    yticklabels=class_labels,
+)
+plt.title("Confusion Matrix")
+plt.ylabel("True Label")
+plt.xlabel("Predicted Label")
 plt.savefig("confusionmatrix.png")
