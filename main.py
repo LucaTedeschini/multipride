@@ -1,8 +1,11 @@
 import argparse
 import gc
-import os
+import logging
+import random
+import shutil
 from datetime import datetime
-from typing import List
+from pathlib import Path
+from typing import Dict
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,16 +13,9 @@ import pandas as pd
 import seaborn as sns
 import torch
 from datasets import Dataset as HFDataset
-from evaluate import load as load_metric
-from huggingface_hub.utils.tqdm import disable_progress_bars
-
-# Used by spanish model
-from pysentimiento.preprocessing import preprocess_tweet
-from rich import print
-from rich.console import Console
-from rich.table import Table
+from pysentimiento.preprocessing import preprocess_tweet  # Used by spanish model
 from scipy.special import softmax
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
 from sklearn.model_selection import train_test_split
 from torch import nn
 from transformers import (
@@ -34,364 +30,434 @@ from transformers import (
 )
 from transformers.modeling_outputs import SequenceClassifierOutput
 
-### Setup ###
-console = Console()
-disable_progress_bars()
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "true"
-# AMD FIX
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-device = "cuda:0" if torch.cuda.is_available() else "cpu"
-model_name = "pysentimiento/robertuito-base-cased"
-model_name = "Twitter/twhin-bert-base"
-model_name = "nickprock/setfit-italian-hate-speech"
-# VERY IMPORTANT: if using the spanish model pysentimiento/robertuito... set this flag to TRUE
-# TODO: automatically set the flag
-spanish = True
-tokenizer = AutoTokenizer.from_pretrained(model_name)
-
-###########################################################
-### Stage 1: Pre-train on LGBT attribute identification ###
-###########################################################
-
-MODELS: List[str] = [
+# --- Configuration / constants ---
+MODELS = [
     "nickprock/setfit-italian-hate-speech",
     "pysentimiento/robertuito-base-cased",
     "Twitter/twhin-bert-base",
 ]
 
-parser = argparse.ArgumentParser(description="Pre-train a model to identify LGBT-related content.")
-parser.add_argument(
-    "--lang",
-    type=str,
-    choices=["it", "es", "both"],
-    default="it",
-    help="Language of the dataset to use for pre-training (default: it).",
-)
-parser.add_argument(
-    "--model",
-    type=str,
-    choices=MODELS,
-    default="nickprock/setfit-italian-hate-speech",
-    help="Model to use for pre-training (default: nickprock/setfit-italian-hate-speech).",
-)
-args = parser.parse_args()
 
-console.print("[bold underline purple]Starting Stage 1: Pre-training for LGBT attribute[/bold underline purple]")
-
-dataset_map = {
-    "it": pd.read_csv("dataset/augmented_it.csv"),
-    "es": pd.read_csv("dataset/augmented_es.csv"),
-    "both": pd.concat(
-        [
-            pd.read_csv("dataset/augmented_it.csv"),
-            pd.read_csv("dataset/augmented_es.csv"),
-        ],
-        ignore_index=True,
-    ),
-}
-
-## Data Loading ##
-console.print("[bold]Loading augmented datasets...[/bold]")
-console.print("[bold green]All datasets available.[/bold green]")
-
-selected_languages = args.lang
-console.print(f"\n:white_check_mark: [bold green]Selected:[/bold green] {', '.join(selected_languages)}\n")
-
-dataset = dataset_map[args.lang]
-
-dataset["bio"] = dataset["bio"].fillna("")
-console.print(f"[bold green]Datasets loaded and combined. Total length: [cyan]{len(dataset)}[/cyan][/bold green]")
-
-if spanish:
-    dataset["text"] = dataset["text"].apply(lambda x: preprocess_tweet(x, lang="es"))
-    dataset["bio"] = dataset["bio"].apply(lambda x: preprocess_tweet(x, lang="es"))
+def set_seed(seed: int = 42):
+    random.seed(seed)
+    np.random.seed(seed)
+    torch.manual_seed(seed)
+    if torch.cuda.is_available():
+        torch.cuda.manual_seed_all(seed)
 
 
-print(dataset["text"])
-
-## Data Splitting ##
-pre_train_df, pre_test_df = train_test_split(dataset, test_size=0.3, stratify=dataset["lgbt"], random_state=42)
-
-
-## Tokenization ##
-def tokenize(batch):
-    return tokenizer(
-        batch["text"],
-        batch["bio"],
-        truncation=True,
-        padding="max_length",
-        max_length=128,
-    )
+def compute_class_weights_from_series(s: pd.Series) -> torch.Tensor:
+    vc = s.value_counts().to_dict()
+    total = sum(vc.values())
+    weights = [total / vc[i] for i in sorted(vc.keys())]
+    return torch.tensor(weights, dtype=torch.float)
 
 
-train_ds = HFDataset.from_pandas(pre_train_df).map(tokenize, batched=True)
-test_ds = HFDataset.from_pandas(pre_test_df).map(tokenize, batched=True)
-train_ds.set_format(
-    type="torch",
-    columns=["input_ids", "attention_mask", "lgbt"],
-    output_all_columns=True,
-)
-test_ds.set_format(
-    type="torch",
-    columns=["input_ids", "attention_mask", "lgbt"],
-    output_all_columns=True,
-)
-
-## Class Weight Computation ##
-label_counts = pre_train_df["lgbt"].value_counts().to_dict()
-total = sum(label_counts.values())
-weights = [total / label_counts[i] for i in sorted(label_counts.keys())]
-class_weights = torch.tensor(weights, dtype=torch.float)
-console.print(f"[bold][green]Class weights for pre-training: [/green]{class_weights}[/bold]")
-
-## Model and Trainer Setup ##
-console.print("[bold yellow]Loading model for pre-training...[/bold yellow]")
-model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=2).to(device)
-console.print("[bold green]Model loaded![/bold green]")
-
-
+# --- Custom Trainer for weighted loss (pretraining stage) ---
 class WeightedTrainer(Trainer):
-    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
-        labels = inputs.pop("labels")
-        outputs = model(**inputs)
+    def __init__(self, class_weights: torch.Tensor | None = None, use_focal_loss: bool = False, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.class_weights = class_weights.to(self.args.device) if class_weights is not None else None
+        self.use_focal_loss = use_focal_loss
+
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
+        labels = inputs.get("labels")
+        outputs = model(**{k: v for k, v in inputs.items() if k != "labels"})
         logits = outputs.logits
-        loss_fct = nn.CrossEntropyLoss(weight=class_weights.to(model.device))
-        loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
+        if self.class_weights is not None:
+            if self.use_focal_loss:
+                loss_fct = FocalLoss(gamma=2.0, weight=self.class_weights)
+            else:
+                loss_fct = nn.CrossEntropyLoss(weight=self.class_weights)
+        else:
+            if self.use_focal_loss:
+                loss_fct = FocalLoss(gamma=2.0)
+            else:
+                loss_fct = nn.CrossEntropyLoss()
+        loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))
         return (loss, outputs) if return_outputs else loss
 
 
-accuracy_metric = load_metric("accuracy")
-f1_metric = load_metric("f1")
-
-
-def compute_metrics(eval_pred):
-    logits, labels = eval_pred
-    preds = torch.argmax(torch.tensor(logits), dim=-1)
-    return {
-        "accuracy": accuracy_metric.compute(predictions=preds, references=labels)["accuracy"],
-        "f1": f1_metric.compute(predictions=preds, references=labels)["f1"],
-    }
-
-
-## Training ##
-training_args = TrainingArguments(
-    output_dir="./results_lgbt_pretrain",
-    eval_strategy="epoch",
-    save_strategy="epoch",
-    learning_rate=2e-5,
-    per_device_train_batch_size=4,
-    per_device_eval_batch_size=4,
-    num_train_epochs=8,
-    weight_decay=0.01,
-    load_best_model_at_end=True,
-    metric_for_best_model="f1",
-    logging_dir="./logs_lgbt_pretrain",
-    logging_steps=50,
-    save_total_limit=2,
-    seed=42,
-    report_to="tensorboard",
-    run_name=f"lgbt_pretraining_{args.lang}_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-)
-
-trainer = WeightedTrainer(
-    model=model,
-    args=training_args,
-    train_dataset=train_ds,
-    eval_dataset=test_ds,
-    tokenizer=tokenizer,
-    compute_metrics=compute_metrics,
-)
-
-console.print("\n[bold yellow]Starting pre-training...[/bold yellow]")
-trainer.train()
-console.print("[bold green]:white_check_mark: Pre-training complete.[/bold green]")
-
-
-########################################################
-### Stage 2: Dual Encoder for Reclamatory classifier ###
-########################################################
-
-console.print(
-    "\n[bold underline purple]Starting Stage 2: Dual Encoder for Reclamatory Classification[/bold underline purple]"
-)
-
-
-## Dual Encoder Model Definition ##
+# --- Dual encoder model ---
 class DualEncoderForSequenceClassification(PreTrainedModel):
     config_class = AutoConfig
 
     def __init__(self, config):
         super().__init__(config)
         self.num_labels = config.num_labels
+        # instantiate two encoders from the pretrained config
         self.encoder_text = AutoModel.from_config(config)
         self.encoder_bio = AutoModel.from_config(config)
         hidden_size = config.hidden_size
 
         self.gate_layer = nn.Sequential(
-            nn.Linear(hidden_size * 2, hidden_size),
-            nn.Tanh(),
-            nn.Linear(hidden_size, hidden_size),
-            nn.Sigmoid(),
+            nn.Linear(hidden_size * 2, hidden_size), nn.Tanh(), nn.Linear(hidden_size, 1), nn.Sigmoid()
         )
-        self.dropout = nn.Dropout(config.hidden_dropout_prob)
+        self.dropout = nn.Dropout(getattr(config, "hidden_dropout_prob", 0.1))
         self.classifier = nn.Linear(hidden_size, config.num_labels)
         self.post_init()
 
-    def forward(self, input_ids=None, attention_mask=None, labels=None, return_dict=None):
-        return_dict = return_dict if return_dict is not None else self.config.use_return_dict
-        outputs_text = self.encoder_text(input_ids=input_ids, attention_mask=attention_mask, return_dict=return_dict)
-        outputs_bio = self.encoder_bio(input_ids=input_ids, attention_mask=attention_mask, return_dict=return_dict)
+    def forward(self, input_ids=None, attention_mask=None, labels=None, return_dict=True):
+        # both encoders receive the same input (text and bio were concatenated/tokenized as pair)
+        out_text = self.encoder_text(input_ids=input_ids, attention_mask=attention_mask, return_dict=return_dict)
+        out_bio = self.encoder_bio(input_ids=input_ids, attention_mask=attention_mask, return_dict=return_dict)
 
-        h_text = outputs_text.last_hidden_state[:, 0]
-        h_bio = outputs_bio.last_hidden_state[:, 0]
+        h_text = out_text.last_hidden_state[:, 0]
+        h_bio = out_bio.last_hidden_state[:, 0]
 
-        combined = torch.cat((h_text, h_bio), dim=-1)
-        gate = self.gate_layer(combined)
+        combined = torch.cat([h_text, h_bio], dim=-1)
+        gate = self.gate_layer(combined)  # shape (batch, 1)
         h_final = gate * h_text + (1 - gate) * h_bio
-
-        pooled_output = self.dropout(h_final)
-        logits = self.classifier(pooled_output)
+        pooled = self.dropout(h_final)
+        logits = self.classifier(pooled)
 
         loss = None
         if labels is not None:
-            class_weights = (
-                torch.tensor(self.config.class_weights, device=self.device)
-                if hasattr(self.config, "class_weights") and self.config.class_weights is not None
-                else None
-            )
-            loss_fct = nn.CrossEntropyLoss(weight=class_weights)
+            cw = None
+            if hasattr(self.config, "class_weights") and self.config.class_weights is not None:
+                cw = torch.tensor(self.config.class_weights, device=logits.device)
+            loss_fct = nn.CrossEntropyLoss(weight=cw)
             loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
-
-        if not return_dict:
-            output = (logits,)
-            return ((loss,) + output) if loss is not None else output
 
         return SequenceClassifierOutput(loss=loss, logits=logits)
 
 
-## Main Task Data Preparation ##
-train_df, test_df = train_test_split(dataset, test_size=0.3, stratify=dataset["label"], random_state=42)
+class FocalLoss(nn.Module):
+    def __init__(self, gamma=2.0, weight=None, reduction="mean"):
+        super().__init__()
+        self.gamma = gamma
+        self.ce = nn.CrossEntropyLoss(weight=weight, reduction="none")
+        self.reduction = reduction
 
-train_ds = HFDataset.from_pandas(train_df).map(tokenize, batched=True)
-test_ds = HFDataset.from_pandas(test_df).map(tokenize, batched=True)
-train_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "label"])
-test_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "label"])
+    def forward(self, logits, targets):
+        ce_loss = self.ce(logits, targets)  # (batch,)
+        p_t = torch.exp(-ce_loss)
+        loss = ((1 - p_t) ** self.gamma) * ce_loss
+        if self.reduction == "mean":
+            return loss.mean()
+        elif self.reduction == "sum":
+            return loss.sum()
+        return loss
 
-label_counts = train_df["label"].value_counts().to_dict()
-total = sum(label_counts.values())
-weights = [total / label_counts[i] for i in sorted(label_counts.keys())]
-class_weights = torch.tensor(weights, dtype=torch.float)
-console.print(f"[bold][green]Class weights for main task: [/green]{class_weights}[/bold]")
 
-## Model Initialization & Weight Loading ##
-console.print("[bold]Initializing Dual Encoder model...[/bold]")
-config = AutoConfig.from_pretrained(model_name, num_labels=2)
-config.class_weights = class_weights.tolist()
-combined_model = DualEncoderForSequenceClassification(config)
+# --- Metrics ---
+def compute_metrics_from_logits(logits, labels) -> Dict[str, float]:
+    preds = np.argmax(logits, axis=-1)
+    acc = float(accuracy_score(labels, preds))
+    f1 = float(f1_score(labels, preds, average="binary"))
+    return {"accuracy": acc, "f1": f1}
 
-base_model = AutoModel.from_pretrained(model_name)
-combined_model.encoder_text.load_state_dict(base_model.state_dict())
-console.print("[cyan]-> Text encoder loaded with base weights.[/cyan]")
 
-state_dict = trainer.model.state_dict()
-filtered_state_dict = {k.replace("bert.", ""): v for k, v in state_dict.items() if k.startswith("bert.")}
-combined_model.encoder_bio.load_state_dict(filtered_state_dict, strict=False)
-console.print("[cyan]-> Bio encoder loaded with pre-trained LGBT classifier weights.[/cyan]")
+def compute_metrics(eval_pred) -> Dict[str, float]:
+    logits, labels = eval_pred
+    return compute_metrics_from_logits(logits, labels)
 
-for param in combined_model.encoder_bio.parameters():
-    param.requires_grad = False
-console.print("[yellow]Bio encoder layers frozen.[/yellow]")
 
-del trainer.model, trainer, base_model
-gc.collect()
-torch.cuda.empty_cache()
-combined_model.to(device)
+# --- Main flow functions ---
+def load_augmented_df(lang: str, logger: logging.Logger) -> pd.DataFrame:
+    files = {
+        "it": Path("dataset/augmented_it.csv"),
+        "es": Path("dataset/augmented_es.csv"),
+    }
+    if lang == "both":
+        df_it = pd.read_csv(files["it"])
+        df_es = pd.read_csv(files["es"])
+        df = pd.concat([df_it, df_es], ignore_index=True)
+    else:
+        df = pd.read_csv(files[lang])
+    df = df.fillna({"bio": ""})
+    logger.info(f"Loaded dataset for lang={lang}, length={len(df)}")
+    return df
 
-## Main Task Training ##
-training_args = TrainingArguments(
-    output_dir="./results_dual_encoder",
-    eval_strategy="epoch",
-    save_strategy="epoch",
-    learning_rate=2e-5,
-    per_device_train_batch_size=16,
-    per_device_eval_batch_size=4,
-    num_train_epochs=8,
-    weight_decay=0.1,
-    load_best_model_at_end=True,
-    metric_for_best_model="f1",
-    logging_dir="./logs_dual_encoder",
-    logging_steps=50,
-    save_total_limit=2,
-    report_to="tensorboard",
-    run_name=f"dual_encoder_{args.lang}_run_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-)
 
-trainer = Trainer(
-    model=combined_model,
-    args=training_args,
-    train_dataset=train_ds,
-    eval_dataset=test_ds,
-    tokenizer=tokenizer,
-    compute_metrics=compute_metrics,
-    callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
-)
+def preprocess_df_texts(df: pd.DataFrame, spanish: bool):
+    if spanish:
+        df = df.copy()
+        df["text"] = df["text"].apply(lambda x: preprocess_tweet(x, lang="es"))
+        df["bio"] = df["bio"].apply(lambda x: preprocess_tweet(x, lang="es"))
+    return df
 
-console.print("\n[bold yellow]Starting main task training...[/bold yellow]")
-trainer.train()
-console.print("[bold green]:white_check_mark: Main task training complete.[/bold green]")
 
-#########################
-### Results Analysis ###
-#########################
-console.print("\n[bold underline purple]Starting Results Analysis[/bold underline purple]")
+def tokenize_function(tokenizer, max_length=128):
+    def fn(batch):
+        return tokenizer(
+            batch["text"],
+            batch["bio"],
+            truncation=True,
+            padding="max_length",
+            max_length=max_length,
+        )
 
-## Prediction and Metrics ##
-predictions_output = trainer.predict(test_ds)
-table = Table(title="Test Set Metrics")
-table.add_column("Metric", justify="left", style="cyan", no_wrap=True)
-table.add_column("Value", justify="right", style="magenta")
+    return fn
 
-for k, v in predictions_output.metrics.items():
-    table.add_row(
-        k.replace("test_", "").capitalize(),
-        f"{v:.4f}" if isinstance(v, float) else str(v),
+
+def prepare_hf_datasets(df: pd.DataFrame, tokenizer, label_column: str, logger: logging.Logger, test_size=0.3, seed=42):
+    train_df, test_df = train_test_split(df, test_size=test_size, stratify=df[label_column], random_state=seed)
+    train_ds = HFDataset.from_pandas(train_df.reset_index(drop=True))
+    test_ds = HFDataset.from_pandas(test_df.reset_index(drop=True))
+
+    tok = tokenize_function(tokenizer)
+    train_ds = train_ds.map(tok, batched=True)
+    test_ds = test_ds.map(tok, batched=True)
+
+    # Rename label column to "labels" which Trainer expects
+    if label_column != "labels":
+        train_ds = train_ds.rename_column(label_column, "labels")
+        test_ds = test_ds.rename_column(label_column, "labels")
+
+    train_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+    test_ds.set_format(type="torch", columns=["input_ids", "attention_mask", "labels"])
+    logger.info("Prepared HF datasets and tokenized.")
+    return train_ds, test_ds, train_df, test_df
+
+
+def train_pretrain_stage(args, logger):
+    # Load tokenizer and datasets
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    df = load_augmented_df(args.lang, logger)
+    df = preprocess_df_texts(df, spanish=(args.lang in ["es", "both"]))
+
+    train_ds, test_ds, train_df, test_df = prepare_hf_datasets(
+        df, tokenizer, label_column="lgbt", logger=logger, test_size=0.3, seed=args.seed
     )
-print(table)
 
-## Error Analysis ##
-logits = predictions_output.predictions
-true_labels = predictions_output.label_ids
-predicted_labels = np.argmax(logits, axis=-1)
-probabilities = softmax(logits, axis=1)
-confidence_scores = np.max(probabilities, axis=1)
+    # compute class weights
+    class_weights = compute_class_weights_from_series(train_df["lgbt"])
+    logger.info(f"Pretrain class weights: {class_weights.tolist()}")
 
-results_df = test_df.copy()
-results_df["predicted_label"] = predicted_labels
-results_df["true_label"] = true_labels
-results_df["confidence"] = confidence_scores
-results_df["is_correct"] = results_df["true_label"] == results_df["predicted_label"]
+    model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=2)
+    model.to(args.device)
 
-output_filename = "error_analysis_results.csv"
-results_df.to_csv(output_filename, index=False, encoding="utf-8-sig")
-console.print(f"\n[bold green]Error analysis results saved to [cyan]'{output_filename}'[/cyan][/bold green]")
+    training_args = TrainingArguments(
+        output_dir=str(RESULTS_DIR / "lgbt_pretrain" / f"{args.lang}" / NOW),
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        learning_rate=2e-5,
+        per_device_train_batch_size=4,
+        per_device_eval_batch_size=4,
+        num_train_epochs=1 if args.fast_dev else 8,
+        weight_decay=0.01,
+        load_best_model_at_end=True,
+        metric_for_best_model="f1",
+        logging_dir=str(LOGS_DIR / "lgbt_pretrain" / f"{args.lang}" / NOW),
+        logging_steps=50,
+        save_total_limit=2,
+        seed=args.seed,
+        report_to="tensorboard",
+    )
 
-## Confusion Matrix ##
-console.print("\n[bold]Confusion Matrix:[/bold]")
-cm = confusion_matrix(true_labels, predicted_labels)
-print(cm)
-class_labels = ["Non-Reclamatory", "Reclamatory"]
+    trainer = WeightedTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_ds,
+        eval_dataset=test_ds,
+        compute_metrics=compute_metrics,
+        class_weights=class_weights,
+        use_focal_loss=False,
+    )
+    logger.info("Starting pre-training...")
+    trainer.train()
+    logger.info("Pre-training finished.")
+    return trainer, tokenizer, train_df, test_df, df
 
-plt.figure(figsize=(8, 6))
-sns.heatmap(
-    cm,
-    annot=True,
-    fmt="d",
-    cmap="Blues",
-    xticklabels=class_labels,
-    yticklabels=class_labels,
-)
-plt.title("Confusion Matrix")
-plt.ylabel("True Label")
-plt.xlabel("Predicted Label")
-plt.savefig("confusionmatrix.png")
+
+def train_main_stage(args, logger, pretrain_trainer, tokenizer, full_df):
+    # Use the full task label 'label' for the main task
+    train_ds, test_ds, train_df, test_df = prepare_hf_datasets(
+        full_df, tokenizer, label_column="label", logger=logger, test_size=0.3, seed=args.seed
+    )
+
+    class_weights = compute_class_weights_from_series(train_df["label"])
+    logger.info(f"Main task class weights: {class_weights.tolist()}")
+
+    # Build Dual Encoder
+    config = AutoConfig.from_pretrained(args.model, num_labels=2)
+    config.class_weights = class_weights.tolist()
+    combined = DualEncoderForSequenceClassification(config)
+
+    # load base encoder weights for text encoder
+    base_model = AutoModel.from_pretrained(args.model)
+    combined.encoder_text.load_state_dict(base_model.state_dict())
+
+    # load learned weights from the pretrain classifier into encoder_bio where possible
+    # derive a filtered state dict from pretrain model (strip "classifier" and other heads)
+    pretrain_state = pretrain_trainer.model.state_dict()
+    # attempt direct mapping for encoder weights if prefix matches; this may need adaptation per model type
+    # best-effort: copy any matching keys
+    prefixed = {k: v for k, v in pretrain_state.items() if "encoder" not in k and "classifier" not in k}
+    # try to load into encoder_bio (non-strict)
+    combined.encoder_bio.load_state_dict({k.replace("bert.", ""): v for k, v in prefixed.items()}, strict=False)
+
+    # freeze bio encoder
+    for p in combined.encoder_bio.parameters():
+        p.requires_grad = False
+
+    # cleanup
+    del base_model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    combined.to(args.device)
+
+    training_args = TrainingArguments(
+        output_dir=str(RESULTS_DIR / "dual_encoder" / f"{args.lang}" / NOW),
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        learning_rate=2e-5,
+        per_device_train_batch_size=8,
+        per_device_eval_batch_size=4,
+        num_train_epochs=1 if args.fast_dev else 8,
+        weight_decay=0.1,
+        load_best_model_at_end=True,
+        metric_for_best_model="f1",
+        logging_dir=str(LOGS_DIR / "dual_encoder" / f"{args.lang}" / NOW),
+        logging_steps=50,
+        save_total_limit=2,
+        seed=args.seed,
+        report_to="tensorboard",
+    )
+
+    trainer = Trainer(
+        model=combined,
+        args=training_args,
+        train_dataset=train_ds,
+        eval_dataset=test_ds,
+        compute_metrics=compute_metrics,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+    )
+
+    logger.info("Starting main task training...")
+    trainer.train()
+    logger.info("Main task training finished.")
+    return trainer, test_ds
+
+
+def evaluate_and_save(trainer: Trainer, test_dataset: HFDataset, logger: logging.Logger, out_prefix="results"):
+    preds_out = trainer.predict(test_dataset)
+    metrics = getattr(preds_out, "metrics", {}) or {}
+    logger.info(f"Test set metrics: {metrics}")
+
+    # log accuracy/f1 if available under common names
+    acc = metrics.get("test_accuracy") or metrics.get("accuracy")
+    f1 = metrics.get("test_f1") or metrics.get("f1")
+    if acc is not None and f1 is not None:
+        logger.info(f"Test set accuracy: {acc:.4f}, F1: {f1:.4f}")
+
+    # If predictions exist, perform error analysis and confusion matrix
+    if getattr(preds_out, "predictions", None) is not None and getattr(preds_out, "label_ids", None) is not None:
+        logits = preds_out.predictions
+        labels = preds_out.label_ids
+        preds = np.argmax(logits, axis=-1)
+
+        # compute probabilities / confidences
+        try:
+            probs = softmax(logits, axis=1) if logits.ndim == 2 else logits
+            confidences = np.max(probs, axis=1)
+        except Exception:
+            confidences = np.zeros_like(preds, dtype=float)
+
+        # convert HF Dataset to pandas safely without mutating format
+        try:
+            results = test_dataset.to_pandas()
+        except Exception:
+            # fallback
+            ds_pandas = test_dataset.with_format("pandas")
+            results = ds_pandas.to_pandas()
+
+        results = results.reset_index(drop=True)
+        results["predicted_label"] = preds
+        results["true_label"] = labels
+        results["confidence"] = confidences
+        results["is_correct"] = results["true_label"] == results["predicted_label"]
+
+        out_csv = RESULTS_DIR / f"{out_prefix}_error_analysis.csv"
+        results.to_csv(out_csv, index=False, encoding="utf-8-sig")
+        logger.info(f"Error analysis saved to {out_csv}")
+
+        cm = confusion_matrix(labels, preds)
+        logger.info(f"Confusion matrix:\n{cm}")
+
+        plt.figure(figsize=(6, 5))
+        sns.heatmap(
+            cm,
+            annot=True,
+            fmt="d",
+            cmap="Blues",
+            xticklabels=["Non-Reclamatory", "Reclamatory"],
+            yticklabels=["Non-Reclamatory", "Reclamatory"],
+        )
+        plt.title("Confusion Matrix")
+        plt.ylabel("True Label")
+        plt.xlabel("Predicted Label")
+        plt.savefig(RESULTS_DIR / f"{out_prefix}_confusion.png")
+        plt.close()
+    else:
+        logger.warning("Predictions or label_ids not found in trainer.predict output; skipping error analysis.")
+
+
+def main():
+    parser = argparse.ArgumentParser(description="Pre-train and fine-tune models for reclaim/labels")
+    parser.add_argument("--lang", choices=["it", "es", "both"], default="it")
+    parser.add_argument("--model", choices=MODELS, default=MODELS[0])
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument("--fast-dev", dest="fast_dev", action="store_true", help="Run fewer epochs for quick tests")
+    parser.add_argument(
+        "--fresh",
+        dest="fresh",
+        action="store_true",
+        help="Delete previous logs and results and start fresh. shutil is used to remove directories on Windows and Unix (equivalent to rm -r).",
+    )
+    args = parser.parse_args()
+
+    # Setup logging and directories
+    global LOGS_DIR, RESULTS_DIR, NOW
+    LOGS_DIR = Path("./logs").absolute()
+    RESULTS_DIR = Path("./results").absolute()
+    NOW = datetime.now().strftime("%Y%m%d_%H%M%S")
+
+    # Fresh start
+    if args.fresh:
+        if LOGS_DIR.exists():
+            shutil.rmtree(LOGS_DIR)
+        if RESULTS_DIR.exists():
+            shutil.rmtree(RESULTS_DIR)
+
+    LOGS_DIR.mkdir(parents=True, exist_ok=True)
+    RESULTS_DIR.mkdir(parents=True, exist_ok=True)
+
+    # Setup logger
+    logger = logging.getLogger("multipride")
+    if logger.handlers:
+        return logger  # already configured
+    logger.setLevel(logging.INFO)
+    fmt = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(name)s - %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    ch = logging.StreamHandler()
+    ch.setFormatter(fmt)
+    logger.addHandler(ch)
+    fh_path = LOGS_DIR / f"run_{NOW}.log"
+    fh = logging.FileHandler(fh_path, encoding="utf-8")
+    fh.setFormatter(fmt)
+    logger.addHandler(fh)
+
+    args.device = "cuda" if torch.cuda.is_available() else "cpu"
+    set_seed(args.seed)
+    logger.info(f"Device: {args.device}  Model: {args.model}  Lang: {args.lang}")
+
+    # Pretrain Stage
+    pretrain_trainer, tokenizer, train_df, test_df, full_df = train_pretrain_stage(args, logger)
+
+    # Main Stage
+    main_trainer, test_dataset = train_main_stage(args, logger, pretrain_trainer, tokenizer, full_df)
+
+    # Evaluate
+    evaluate_and_save(main_trainer, test_dataset, logger, out_prefix="dual_encoder")
+
+    logger.info("All done.")
+
+
+if __name__ == "__main__":
+    main()

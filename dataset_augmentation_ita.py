@@ -1,8 +1,9 @@
-import pandas as pd
 import os
+import time
+
+import pandas as pd
 from dotenv import load_dotenv
 from openai import OpenAI
-import time
 from rich.console import Console
 from rich.progress import track
 

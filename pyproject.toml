@@ -1,11 +1,39 @@
 [project]
 name = "multipride"
 version = "0.1.0"
-description = "Add your description here"
-readme = "README.md"
-requires-python = ">=3.10"
-dependencies = [
-    "black[jupyter]>=25.9.0",
-    "numpy>=2.2.6",
-    "torch-tb-profiler>=0.4.3",
+description = "Detecting reclamatory slurs in multilingual social media text"
+authors = [
+    { name = "Matteo Fasulo", email = "mat.fasulo@gmail.com" },
+    { name = "Luca Tedeschi", email = "..." },
 ]
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "accelerate>=1.11.0",
+    "black[jupyter]>=25.9.0",
+    "datasets>=4.4.0",
+    "evaluate>=0.4.6",
+    "google-generativeai>=0.8.5",
+    "huggingface-hub[hf-xet]>=0.36.0",
+    "matplotlib>=3.10.7",
+    "numpy==1.26.4",
+    "pandas>=2.3.3",
+    "pysentimiento>=0.7.3",
+    "scikit-learn>=1.7.2",
+    "scipy>=1.15.3",
+    "seaborn>=0.13.2",
+    "torch-tb-profiler>=0.4.3",
+    "torch==2.8.0",
+    "tqdm>=4.67.1",
+]
+
+[[tool.uv.index]]
+name = "pytorch-cu126"
+url = "https://download.pytorch.org/whl/cu126"
+explicit = true
+
+[tool.black]
+line-length = 120
+
+[tool.isort]
+profile = "black"
