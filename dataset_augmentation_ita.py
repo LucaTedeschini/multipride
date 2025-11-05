@@ -1,18 +1,16 @@
-import pandas as pd
 import os
+import time
+
+import pandas as pd
 from dotenv import load_dotenv
 from openai import OpenAI
-import time
 from rich.console import Console
 from rich.progress import track
 
 ### Setup ###
 console = Console()
 load_dotenv()
-client = OpenAI(
-    api_key=os.environ.get('DEEPSEEK_API_KEY'), 
-    base_url="https://api.deepseek.com"
-)
+client = OpenAI(api_key=os.environ.get("DEEPSEEK_API_KEY"), base_url="https://api.deepseek.com")
 
 system_prompt = """Sei un annotatore per un task di classificazione. In input riceverai la bio di un utente Twitter e alcuni suoi tweet.
 Il tuo compito è decidere se l'utente in questione fa parte o meno della comunità LGBT.
@@ -36,31 +34,28 @@ lgbt = []
 iterable = zip(ita["text"], ita["bio"])
 
 for text, bio in track(iterable, description="[cyan]Processing entries...[/cyan]", total=len(ita)):
-    
+
     bio = "" if str(bio) == "nan" else bio
     user_message = f'"{text}" - "{bio}"'
-    
+
     try:
         response = client.chat.completions.create(
             model="deepseek-chat",
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_message}
-            ],
-            stream=False
+            messages=[{"role": "system", "content": system_prompt}, {"role": "user", "content": user_message}],
+            stream=False,
         )
         answer = response.choices[0].message.content.strip()
     except Exception as e:
         console.print(f"[bold red]An error occurred: {e}\nRetrying in 2 minutes...[/bold red]")
         answer = "error"
         time.sleep(120)
-    
+
     if answer in ["1", "0"]:
         answer = int(answer)
     else:
         # Mark ambiguous/error responses
         answer = 0.5
-    
+
     lgbt.append(answer)
     time.sleep(0.5)
 
