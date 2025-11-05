@@ -54,7 +54,7 @@ def compute_class_weights_from_series(s: pd.Series) -> torch.Tensor:
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, gamma: float = 3.0, weight: torch.Tensor | None = None, reduction: str | None = "mean"):
+    def __init__(self, gamma: float = 2.0, weight: torch.Tensor | None = None, reduction: str | None = "mean"):
         super().__init__()
         self.gamma = gamma
         self.ce = nn.CrossEntropyLoss(weight=weight, reduction="none")
