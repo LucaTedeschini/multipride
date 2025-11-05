@@ -15,7 +15,13 @@ import torch
 from datasets import Dataset as HFDataset
 from pysentimiento.preprocessing import preprocess_tweet  # Used by spanish model
 from scipy.special import softmax
-from sklearn.metrics import accuracy_score, confusion_matrix, f1_score
+from sklearn.metrics import (
+    accuracy_score,
+    confusion_matrix,
+    f1_score,
+    precision_score,
+    recall_score,
+)
 from sklearn.model_selection import train_test_split
 from torch import nn
 from transformers import (
@@ -106,7 +112,7 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
         self,
         config,
         use_focal_loss: bool = False,
-        gamma: float = 3.0,
+        gamma: float = 2.0,
     ):
         super().__init__(config)
         self.num_labels = config.num_labels
@@ -157,12 +163,35 @@ def compute_metrics_from_logits(logits, labels) -> Dict[str, float]:
     preds = np.argmax(logits, axis=-1)
     acc = float(accuracy_score(labels, preds))
     f1 = float(f1_score(labels, preds, average="binary"))
-    return {"accuracy": acc, "f1": f1}
+    precision = float(precision_score(labels, preds, average="binary"))
+    recall = float(recall_score(labels, preds, average="binary"))
+    return {
+        "accuracy": acc,
+        "f1": f1,
+        "precision": precision,
+        "recall": recall,
+    }
 
 
 def compute_metrics(eval_pred) -> Dict[str, float]:
     logits, labels = eval_pred
     return compute_metrics_from_logits(logits, labels)
+
+
+def compute_label_proportions(
+    train_df: pd.DataFrame, val_df: pd.DataFrame, test_df: pd.DataFrame, label_column: str, logger: logging.Logger
+):
+    def label_props(df: pd.DataFrame) -> Dict[int, float]:
+        counts = df[label_column].value_counts(normalize=True).to_dict()
+        return {k: counts.get(k, 0.0) for k in sorted(counts.keys())}
+
+    train_props = label_props(train_df)
+    val_props = label_props(val_df)
+    test_props = label_props(test_df)
+
+    logger.info(f"Label proportions in training set: {train_props}")
+    logger.info(f"Label proportions in validation set: {val_props}")
+    logger.info(f"Label proportions in test set: {test_props}")
 
 
 # --- Main flow functions ---
@@ -227,6 +256,7 @@ def prepare_hf_datasets(
     )
 
     logger.info(f"Split sizes - Train: {len(train_df)}, Val: {len(val_df)}, Test: {len(test_df)}")
+    compute_label_proportions(train_df, val_df, test_df, label_column, logger)
 
     train_ds = HFDataset.from_pandas(train_df.reset_index(drop=True))
     val_ds = HFDataset.from_pandas(val_df.reset_index(drop=True))
@@ -463,14 +493,14 @@ def evaluate_and_save(trainer: Trainer, test_dataset: HFDataset, logger: logging
         results.to_csv(out_csv, index=False, encoding="utf-8-sig")
         logger.info(f"Error analysis saved to {out_csv}")
 
-        cm = confusion_matrix(labels, preds)
+        cm = confusion_matrix(labels, preds, normalize="all")
         logger.info(f"Confusion matrix:\n{cm}")
 
         plt.figure(figsize=(6, 5))
         sns.heatmap(
             cm,
             annot=True,
-            fmt="d",
+            fmt=".2f",
             cmap="Blues",
             xticklabels=["Non-Reclamatory", "Reclamatory"],
             yticklabels=["Non-Reclamatory", "Reclamatory"],
