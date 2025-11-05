@@ -13,7 +13,6 @@ import pandas as pd
 import seaborn as sns
 import torch
 from datasets import Dataset as HFDataset
-from pysentimiento.preprocessing import preprocess_tweet  # Used by spanish model
 from scipy.special import softmax
 from sklearn.metrics import (
     accuracy_score,
@@ -39,7 +38,9 @@ from transformers.modeling_outputs import SequenceClassifierOutput
 # --- Configuration / constants ---
 MODELS = [
     "nickprock/setfit-italian-hate-speech",
-    "pysentimiento/robertuito-base-cased",
+    "cardiffnlp/twitter-xlm-roberta-base-hate-spanish",
+    "cardiffnlp/twitter-xlm-roberta-base-sentiment",
+    "dccuchile/bert-base-spanish-wwm-uncased",
     "Twitter/twhin-bert-base",
 ]
 
@@ -212,14 +213,6 @@ def load_augmented_df(lang: str, logger: logging.Logger) -> pd.DataFrame:
     return df
 
 
-def preprocess_df_texts(df: pd.DataFrame, spanish: bool):
-    if spanish:
-        df = df.copy()
-        df["text"] = df["text"].apply(lambda x: preprocess_tweet(x, lang="es"))
-        df["bio"] = df["bio"].apply(lambda x: preprocess_tweet(x, lang="es"))
-    return df
-
-
 def tokenize_function_single(tokenizer, max_length=128):
     """For models that use single concatenated text+bio input (pretrain stage)"""
 
@@ -283,11 +276,75 @@ def prepare_hf_datasets(
     return train_ds, val_ds, test_ds, train_df, val_df, test_df
 
 
+def prepare_hf_weighted_datasets(
+    df: pd.DataFrame,
+    tokenizer,
+    label_column: str,
+    logger: logging.Logger,
+    val_size=0.15,
+    test_size=0.15,
+    seed=42,
+):
+    # First split: separate test set
+    train_val_df, test_df = train_test_split(df, test_size=test_size, stratify=df[label_column], random_state=seed)
+
+    # Second split: separate train and validation
+    train_df, val_df = train_test_split(
+        train_val_df,
+        test_size=val_size / (1 - test_size),
+        stratify=train_val_df[label_column],
+        random_state=seed,
+    )
+
+    logger.info(f"Split sizes - Train: {len(train_df)}, Val: {len(val_df)}, Test: {len(test_df)}")
+    compute_label_proportions(train_df, val_df, test_df, label_column, logger)
+
+    # Create datasets
+    train_ds = HFDataset.from_pandas(train_df.reset_index(drop=True))
+    val_ds = HFDataset.from_pandas(val_df.reset_index(drop=True))
+    test_ds = HFDataset.from_pandas(test_df.reset_index(drop=True))
+
+    tok = tokenize_function_single(tokenizer)
+    format_columns = ["input_ids", "attention_mask", "labels"]
+
+    train_ds = train_ds.map(tok, batched=True)
+    val_ds = val_ds.map(tok, batched=True)
+    test_ds = test_ds.map(tok, batched=True)
+
+    # Rename label column to "labels"
+    if label_column != "labels":
+        train_ds = train_ds.rename_column(label_column, "labels")
+        val_ds = val_ds.rename_column(label_column, "labels")
+        test_ds = test_ds.rename_column(label_column, "labels")
+
+    train_ds.set_format(type="torch", columns=format_columns)
+    val_ds.set_format(type="torch", columns=format_columns)
+    test_ds.set_format(type="torch", columns=format_columns)
+
+    # Compute class weights for WeightedRandomSampler
+    train_labels = train_df[label_column].values
+    class_counts = np.bincount(train_labels)
+    class_weights = 1.0 / class_counts
+
+    # Assign weight to each sample based on its class
+    sample_weights = class_weights[train_labels]
+    sample_weights = list(sample_weights)
+
+    # Create WeightedRandomSampler
+    sampler = torch.utils.data.WeightedRandomSampler(
+        weights=sample_weights, num_samples=len(sample_weights), replacement=True
+    )
+
+    logger.info(f"Created WeightedRandomSampler with class weights: {class_weights}")
+    logger.info(f"Prepared HF datasets and tokenized.")
+
+    return train_ds, val_ds, test_ds, train_df, val_df, test_df, sampler
+
+
 def train_pretrain_stage(args, logger):
     # Load tokenizer and datasets
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     df = load_augmented_df(args.lang, logger)
-    df = preprocess_df_texts(df, spanish=(args.lang in ["es", "both"]))
 
     # Use single input mode (dual_input=False) for pretrain
     train_ds, val_ds, test_ds, train_df, val_df, test_df = prepare_hf_datasets(
@@ -316,12 +373,12 @@ def train_pretrain_stage(args, logger):
         per_device_eval_batch_size=8,
         # gradient_accumulation_steps=4,  # effective batch size 32
         num_train_epochs=1 if args.fast_dev else 10,
-        weight_decay=0.01,
+        weight_decay=0.1,
         load_best_model_at_end=True,
         metric_for_best_model="f1",
         logging_dir=str(OUTPUT_DIR / "lgbt_pretrain" / f"{args.lang}" / NOW),
         logging_steps=50,
-        save_total_limit=2,
+        save_total_limit=1,
         seed=args.seed,
         report_to="tensorboard",
     )
@@ -344,7 +401,7 @@ def train_pretrain_stage(args, logger):
 
 
 def train_main_stage(args, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder: bool = False):
-    train_ds, val_ds, test_ds, train_df, val_df, test_df = prepare_hf_datasets(
+    train_ds, val_ds, test_ds, train_df, val_df, test_df, sampler = prepare_hf_weighted_datasets(
         full_df,
         tokenizer,
         label_column="label",
@@ -426,12 +483,12 @@ def train_main_stage(args, logger, pretrain_trainer, tokenizer, full_df, freeze_
         per_device_eval_batch_size=8,
         # gradient_accumulation_steps=4,  # effective batch size 32
         num_train_epochs=1 if args.fast_dev else 10,
-        weight_decay=0.01,
+        weight_decay=0.1,
         load_best_model_at_end=True,
         metric_for_best_model="f1",
         logging_dir=str(OUTPUT_DIR / "dual_encoder" / f"{args.lang}" / NOW),
         logging_steps=50,
-        save_total_limit=2,
+        save_total_limit=1,
         seed=args.seed,
         report_to="tensorboard",
     )
@@ -444,6 +501,15 @@ def train_main_stage(args, logger, pretrain_trainer, tokenizer, full_df, freeze_
         compute_metrics=compute_metrics,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
+
+    if args.weighted_sampling:
+        logger.info("Using WeightedRandomSampler for training")
+
+        # Replace the default sampler
+        def get_train_sampler(dataset):
+            return sampler
+
+        trainer._get_train_sampler = get_train_sampler
 
     logger.info("Starting main task training...")
     trainer.train()
@@ -550,6 +616,12 @@ def main():
         default=2.0,
         help="Gamma parameter for Focal Loss",
     )
+    parser.add_argument(
+        "--weighted-sampling",
+        dest="weighted_sampling",
+        action="store_true",
+        help="Use WeightedRandomSampler with replacement for dual encoder training",
+    )
     args = parser.parse_args()
 
     # Setup logging and directories
@@ -600,7 +672,6 @@ def main():
         logger.info("Evaluating pretrain stage on test set...")
         tokenizer_temp = AutoTokenizer.from_pretrained(args.model)
         df_temp = load_augmented_df(args.lang, logger)
-        df_temp = preprocess_df_texts(df_temp, spanish=(args.lang in ["es", "both"]))
         _, _, pretrain_test_ds, _, _, _ = prepare_hf_datasets(
             df_temp,
             tokenizer_temp,
@@ -614,7 +685,6 @@ def main():
         pretrain_trainer = None
         tokenizer = AutoTokenizer.from_pretrained(args.model)
         full_df = load_augmented_df(args.lang, logger)
-        full_df = preprocess_df_texts(full_df, spanish=(args.lang in ["es", "both"]))
 
     # Main Stage
     main_trainer, test_dataset = train_main_stage(
