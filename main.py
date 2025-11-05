@@ -41,9 +41,9 @@ os.environ["TRANSFORMERS_NO_ADVISORY_WARNINGS"] = "true"
 #AMD FIX
 os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 device = "cuda:0" if torch.cuda.is_available() else "cpu"
-model_name = 'pysentimiento/robertuito-base-cased'
 model_name = "Twitter/twhin-bert-base"
 model_name = "nickprock/setfit-italian-hate-speech"
+model_name = 'cardiffnlp/twitter-xlm-roberta-base-hate-spanish'
 # VERY IMPORTANT: if using the spanish model pysentimiento/robertuito... set this flag to TRUE
 # TODO: automatically set the flag
 spanish = False
