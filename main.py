@@ -54,7 +54,7 @@ def compute_class_weights_from_series(s: pd.Series) -> torch.Tensor:
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, gamma=3.0, weight=None, reduction="mean"):
+    def __init__(self, gamma: float = 3.0, weight: torch.Tensor | None = None, reduction: str | None = "mean"):
         super().__init__()
         self.gamma = gamma
         self.ce = nn.CrossEntropyLoss(weight=weight, reduction="none")
@@ -73,17 +73,25 @@ class FocalLoss(nn.Module):
 
 # --- Custom Trainer for weighted loss (pretraining stage) ---
 class WeightedTrainer(Trainer):
-    def __init__(self, class_weights: torch.Tensor | None = None, use_focal_loss: bool = False, *args, **kwargs):
+    def __init__(
+        self,
+        class_weights: torch.Tensor | None = None,
+        use_focal_loss: bool = False,
+        gamma: float = 3.0,
+        *args,
+        **kwargs,
+    ):
         super().__init__(*args, **kwargs)
         self.class_weights = class_weights.to(self.args.device) if class_weights is not None else None
         self.use_focal_loss = use_focal_loss
+        self.gamma = gamma
 
     def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         labels = inputs.get("labels")
         outputs = model(**{k: v for k, v in inputs.items() if k != "labels"})
         logits = outputs.logits
         if self.use_focal_loss:
-            loss_fct = FocalLoss(weight=self.class_weights)
+            loss_fct = FocalLoss(gamma=self.gamma, weight=self.class_weights)
         else:
             loss_fct = nn.CrossEntropyLoss(weight=self.class_weights)
         loss = loss_fct(logits.view(-1, logits.size(-1)), labels.view(-1))
@@ -94,7 +102,12 @@ class WeightedTrainer(Trainer):
 class DualEncoderForSequenceClassification(PreTrainedModel):
     config_class = AutoConfig
 
-    def __init__(self, config, use_focal_loss: bool = False):
+    def __init__(
+        self,
+        config,
+        use_focal_loss: bool = False,
+        gamma: float = 3.0,
+    ):
         super().__init__(config)
         self.num_labels = config.num_labels
         # instantiate two encoders from the pretrained config
@@ -108,6 +121,7 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
         self.dropout = nn.Dropout(getattr(config, "hidden_dropout_prob", 0.1))
         self.classifier = nn.Linear(hidden_size, config.num_labels)
         self.use_focal_loss = use_focal_loss
+        self.gamma = gamma
         self.post_init()
 
     def forward(self, input_ids=None, attention_mask=None, labels=None, return_dict=True):
@@ -130,7 +144,7 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
             if hasattr(self.config, "class_weights") and self.config.class_weights is not None:
                 cw = torch.tensor(self.config.class_weights, device=logits.device, dtype=torch.float)
             if self.use_focal_loss:
-                loss_fct = FocalLoss(weight=cw)
+                loss_fct = FocalLoss(gamma=self.gamma, weight=cw)
             else:
                 loss_fct = nn.CrossEntropyLoss(weight=cw)
             loss = loss_fct(logits.view(-1, self.num_labels), labels.view(-1))
@@ -289,7 +303,8 @@ def train_pretrain_stage(args, logger):
         eval_dataset=val_ds,
         compute_metrics=compute_metrics,
         class_weights=class_weights,
-        use_focal_loss=True,
+        use_focal_loss=args.use_focal_loss,
+        gamma=args.gamma,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
     logger.info("Starting pre-training...")
@@ -315,7 +330,11 @@ def train_main_stage(args, logger, pretrain_trainer, tokenizer, full_df, freeze_
     # Build Dual Encoder
     config = AutoConfig.from_pretrained(args.model, num_labels=2)
     config.class_weights = class_weights.tolist()
-    combined = DualEncoderForSequenceClassification(config, use_focal_loss=True)
+    combined = DualEncoderForSequenceClassification(
+        config,
+        use_focal_loss=args.use_focal_loss,
+        gamma=args.gamma,
+    )
 
     # Load base encoder weights for text encoder (fresh from pretrained)
     base_model = AutoModel.from_pretrained(args.model)
@@ -483,6 +502,24 @@ def main():
         action="store_true",
         help="Skip pretraining stage and train dual encoder from scratch",
     )
+    parser.add_argument(
+        "--freeze-bio-encoder",
+        dest="freeze_bio_encoder",
+        action="store_true",
+        help="Freeze the bio encoder during main task training",
+    )
+    parser.add_argument(
+        "--use-focal-loss",
+        dest="use_focal_loss",
+        action="store_true",
+        help="Use Focal Loss instead of Cross-Entropy Loss",
+    )
+    parser.add_argument(
+        "--gamma",
+        type=float,
+        default=2.0,
+        help="Gamma parameter for Focal Loss",
+    )
     args = parser.parse_args()
 
     # Setup logging and directories
@@ -550,7 +587,9 @@ def main():
         full_df = preprocess_df_texts(full_df, spanish=(args.lang in ["es", "both"]))
 
     # Main Stage
-    main_trainer, test_dataset = train_main_stage(args, logger, pretrain_trainer, tokenizer, full_df)
+    main_trainer, test_dataset = train_main_stage(
+        args, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=args.freeze_bio_encoder
+    )
 
     # Evaluate on test set
     logger.info("Evaluating main model on test set...")
