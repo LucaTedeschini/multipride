@@ -116,7 +116,7 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
         hidden_size = config.hidden_size
 
         self.gate_layer = nn.Sequential(
-            nn.Linear(hidden_size * 2, hidden_size), nn.Tanh(), nn.Linear(hidden_size, 1), nn.Sigmoid()
+            nn.Linear(hidden_size * 2, hidden_size), nn.Tanh(), nn.Linear(hidden_size, hidden_size), nn.Sigmoid()
         )
         self.dropout = nn.Dropout(getattr(config, "hidden_dropout_prob", 0.1))
         self.classifier = nn.Linear(hidden_size, config.num_labels)
