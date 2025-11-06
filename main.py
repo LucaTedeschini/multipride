@@ -2,6 +2,7 @@ import argparse
 import logging
 import shutil
 import torch
+from omegaconf import OmegaConf
 from transformers import (
     AutoTokenizer,
 )
@@ -62,10 +63,34 @@ def main():
         action="store_true",
         help="Use WeightedRandomSampler with replacement for dual encoder training",
     )
+    parser.add_argument(
+        "--config-file",
+        dest="config_file",
+        action="store_true",
+        help="Pass a path to a config.yaml file. !!The config file could override other configurations!!",
+    )
     args = parser.parse_args()
 
+    if args.config_file:
+        # TODO: parsing and validating config file (https://omegaconf.readthedocs.io/en/2.3_branch/usage.html)
+        conf = OmegaConf.create()
+        pass
+    else:
+        conf = OmegaConf.create()
+        conf.lang = args.lang
+        conf.seed = args.seed
+        conf.model = args.model
+        conf.fast_dev = args.fast_dev
+        conf.fresh = args.fresh
+        conf.skip_pretrain = args.skip_pretrain
+        conf.freeze_bio_encoder = args.freeze_bio_encoder
+        conf.use_focal_loss = args.use_focal_loss
+        conf.gamma = args.gamma
+        conf.weighted_sampling = args.weighted_sampling
+
+
     # Fresh start
-    if args.fresh:
+    if conf.fresh:
         if constants.LOGS_DIR.exists():
             shutil.rmtree(constants.LOGS_DIR)
         if constants.OUTPUT_DIR.exists():
@@ -93,35 +118,35 @@ def main():
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
-    args.device = "cuda" if torch.cuda.is_available() else "cpu"
-    set_seed(args.seed)
-    logger.info(f"Device: {args.device}  Model: {args.model}  Lang: {args.lang}")
+    conf.device = "cuda" if torch.cuda.is_available() else "cpu"
+    set_seed(conf.seed)
+    logger.info(f"Device: {conf.device}  Model: {conf.model}  Lang: {conf.lang}")
 
-    if not args.skip_pretrain:
+    if not conf.skip_pretrain:
         # Pretrain Stage
-        pretrain_trainer, tokenizer, train_df, val_df, test_df_pretrain, full_df = train_pretrain_stage(args, logger)
+        pretrain_trainer, tokenizer, train_df, val_df, test_df_pretrain, full_df = train_pretrain_stage(conf, logger)
 
         # Evaluate pretrain stage on test set
         logger.info("Evaluating pretrain stage on test set...")
-        tokenizer_temp = AutoTokenizer.from_pretrained(args.model)
-        df_temp = load_augmented_df(args.lang, logger)
+        tokenizer_temp = AutoTokenizer.from_pretrained(conf.model)
+        df_temp = load_augmented_df(conf.lang, logger)
         _, _, pretrain_test_ds, _, _, _ = prepare_hf_datasets(
             df_temp,
             tokenizer_temp,
             label_column="lgbt",
             logger=logger,
-            seed=args.seed,
+            seed=conf.seed,
         )
         evaluate_and_save(pretrain_trainer, pretrain_test_ds, logger, out_prefix="lgbt_pretrain")
     else:
         logger.info("Skipping pretrain stage")
         pretrain_trainer = None
-        tokenizer = AutoTokenizer.from_pretrained(args.model)
-        full_df = load_augmented_df(args.lang, logger)
+        tokenizer = AutoTokenizer.from_pretrained(conf.model)
+        full_df = load_augmented_df(conf.lang, logger)
 
     # Main Stage
     main_trainer, test_dataset = train_main_stage(
-        args, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=args.freeze_bio_encoder
+        conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=conf.freeze_bio_encoder
     )
 
     # Evaluate on test set
