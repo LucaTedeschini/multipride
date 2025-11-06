@@ -172,3 +172,25 @@ results/
 
 # logs
 logs/*.log
+results_weighted/checkpoint-1330/config.json
+results_weighted/checkpoint-1330/model.safetensors
+results_weighted/checkpoint-1330/optimizer.pt
+results_weighted/checkpoint-1330/rng_state.pth
+results_weighted/checkpoint-1330/scheduler.pt
+results_weighted/checkpoint-1330/special_tokens_map.json
+results_weighted/checkpoint-1330/tokenizer_config.json
+results_weighted/checkpoint-1330/tokenizer.json
+results_weighted/checkpoint-1330/trainer_state.json
+results_weighted/checkpoint-1330/training_args.bin
+results_weighted/checkpoint-1330/vocab.txt
+results_weighted/checkpoint-1520/config.json
+results_weighted/checkpoint-1520/model.safetensors
+results_weighted/checkpoint-1520/optimizer.pt
+results_weighted/checkpoint-1520/rng_state.pth
+results_weighted/checkpoint-1520/scheduler.pt
+results_weighted/checkpoint-1520/special_tokens_map.json
+results_weighted/checkpoint-1520/tokenizer_config.json
+results_weighted/checkpoint-1520/tokenizer.json
+results_weighted/checkpoint-1520/trainer_state.json
+results_weighted/checkpoint-1520/training_args.bin
+results_weighted/checkpoint-1520/vocab.txt
