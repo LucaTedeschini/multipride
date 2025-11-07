@@ -18,7 +18,8 @@ from include.utilities import (
 from include.training import (
     train_pretrain_stage,
     train_main_stage,
-    evaluate_and_save
+    evaluate_and_save,
+    train_main_stage_LPFT
 )
 
 
@@ -85,6 +86,7 @@ def main():
         conf.gamma = args.gamma
         conf.weighted_sampling = args.weighted_sampling
     
+    # README: these parameters are not overrided by the config file
     conf.fast_dev = args.fast_dev
     conf.fresh = args.fresh
 
@@ -149,10 +151,16 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(conf.model)
         full_df = load_augmented_df(conf.lang, logger)
 
-    # Main Stage
-    main_trainer, test_dataset = train_main_stage(
-        conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=conf.freeze_bio_encoder
-    )
+    if not conf.lpft:
+        # Main Stage
+        main_trainer, test_dataset = train_main_stage(
+            conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=conf.freeze_bio_encoder
+        )
+    else:
+        # Main Stage (LP-FT)
+        main_trainer, test_dataset = train_main_stage_LPFT(
+            conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=conf.freeze_bio_encoder
+        )
 
     # Evaluate on test set
     logger.info("Evaluating main model on test set...")

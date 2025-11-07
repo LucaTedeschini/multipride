@@ -209,6 +209,173 @@ def train_main_stage(conf, logger, pretrain_trainer, tokenizer, full_df, freeze_
     return trainer, test_ds
 
 
+def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder: bool = False):
+    train_ds, val_ds, test_ds, train_df, val_df, test_df, sampler = prepare_hf_weighted_datasets(
+        full_df,
+        tokenizer,
+        label_column="label",
+        logger=logger,
+        val_size=conf.val_size_lpft,
+        test_size=conf.test_size_lpft,
+        seed=conf.seed,
+    )
+
+    class_weights = compute_class_weights_from_series(train_df["label"])
+    logger.info(f"Main task class weights: {class_weights.tolist()}")
+
+    # Build Dual Encoder
+    config = AutoConfig.from_pretrained(conf.model, num_labels=2)
+    config.class_weights = class_weights.tolist()
+    combined = DualEncoderForSequenceClassification(
+        config,
+        use_focal_loss=conf.use_focal_loss,
+        gamma=conf.gamma,
+    )
+
+    # Load base encoder weights for text encoder (fresh from pretrained)
+    base_model = AutoModel.from_pretrained(conf.model)
+    combined.encoder_text.load_state_dict(base_model.state_dict(), strict=True)
+    logger.info("Loaded fresh pretrained weights into encoder_text")
+
+    if pretrain_trainer is not None:
+        # Load the LGBT-trained encoder weights into encoder_bio
+        pretrain_state = pretrain_trainer.model.state_dict()
+
+        # Extract encoder weights (model-specific, adjust prefix as needed)
+        encoder_prefix = None
+        for key in pretrain_state.keys():
+            if "embeddings" in key:
+                encoder_prefix = key.split(".")[0]
+                break
+
+        if encoder_prefix:
+            encoder_state = {
+                k.replace(f"{encoder_prefix}.", ""): v
+                for k, v in pretrain_state.items()
+                if k.startswith(f"{encoder_prefix}.")
+            }
+
+            # Load into encoder_bio
+            missing, unexpected = combined.encoder_bio.load_state_dict(encoder_state, strict=False)
+            logger.info(f"Loaded LGBT-pretrained weights into encoder_bio")
+            logger.info(f"Missing keys: {len(missing)}, Unexpected keys: {len(unexpected)}")
+            logger.info(f"Missing keys: {missing}")
+            logger.info(f"Unexpected keys: {unexpected}")
+        else:
+            logger.warning("Could not determine encoder prefix, initializing encoder_bio with random weights")
+    else:
+        logger.info("No pretrain_trainer provided, initializing encoder_bio with base pretrained weights")
+        combined.encoder_bio.load_state_dict(base_model.state_dict(), strict=True)
+
+    # Freeze bio encoder if specified
+    if freeze_bio_encoder:
+        for param in combined.encoder_bio.parameters():
+            param.requires_grad = False
+        logger.info("Bio encoder is frozen (not fine-tuned)")
+    else:
+        logger.info("Both encoders will be fine-tuned (not frozen)")
+
+    # Cleanup
+    del base_model
+    gc.collect()
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+
+    combined.to(conf.device)
+
+
+    for param in combined.encoder_text.parameters():
+        param.requires_grad = False
+
+    training_args = TrainingArguments(
+        output_dir=str(constants.RESULTS_DIR / "dual_encoder" / f"{conf.lang}" / constants.NOW),
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        learning_rate=conf.lr_lp,
+        per_device_train_batch_size=conf.batch_size_lp,
+        per_device_eval_batch_size=conf.batch_size_lp,
+        # gradient_accumulation_steps=4,  # effective batch size 32
+        num_train_epochs=1 if conf.fast_dev else 10,
+        weight_decay=conf.weight_decay_lp,
+        load_best_model_at_end=True,
+        metric_for_best_model="f1",
+        logging_dir=str(constants.OUTPUT_DIR / "dual_encoder" / f"{conf.lang}" / constants.NOW),
+        logging_steps=50,
+        save_total_limit=1,
+        seed=conf.seed,
+        report_to="tensorboard",
+    )
+
+    trainer = Trainer(
+        model=combined,
+        args=training_args,
+        train_dataset=train_ds,
+        eval_dataset=val_ds,
+        compute_metrics=compute_metrics,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+    )
+
+    if conf.weighted_sampling:
+        logger.info("Using WeightedRandomSampler for training")
+
+        # Replace the default sampler
+        def get_train_sampler(dataset):
+            return sampler
+
+        trainer._get_train_sampler = get_train_sampler
+
+    logger.info("Starting linear prober training...")
+    trainer.train()
+
+    # Fine tuning
+    for param in combined.encoder_text.parameters():
+            param.requires_grad = False
+
+    training_args = TrainingArguments(
+        output_dir=str(constants.RESULTS_DIR / "dual_encoder" / f"{conf.lang}" / constants.NOW),
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        learning_rate=conf.lr_ft,
+        per_device_train_batch_size=conf.batch_size_ft,
+        per_device_eval_batch_size=conf.batch_size_ft,
+        # gradient_accumulation_steps=4,  # effective batch size 32
+        num_train_epochs=1 if conf.fast_dev else 10,
+        weight_decay=conf.weight_decay_ft,
+        load_best_model_at_end=True,
+        metric_for_best_model="f1",
+        logging_dir=str(constants.OUTPUT_DIR / "dual_encoder" / f"{conf.lang}" / constants.NOW),
+        logging_steps=50,
+        save_total_limit=1,
+        seed=conf.seed,
+        report_to="tensorboard",
+    )
+
+    trainer = Trainer(
+        model=combined,
+        args=training_args,
+        train_dataset=train_ds,
+        eval_dataset=val_ds,
+        compute_metrics=compute_metrics,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+    )
+
+    if conf.weighted_sampling:
+        logger.info("Using WeightedRandomSampler for training")
+
+        # Replace the default sampler
+        def get_train_sampler(dataset):
+            return sampler
+
+        trainer._get_train_sampler = get_train_sampler
+    
+
+    logger.info("Starting fine tuning training...")
+    trainer.train()
+
+    logger.info("Main task training finished.")
+    return trainer, test_ds
+
+
 def evaluate_and_save(trainer: Trainer, test_dataset: HFDataset, logger: logging.Logger, out_prefix="results"):
     preds_out = trainer.predict(test_dataset)
     metrics = getattr(preds_out, "metrics", {}) or {}
