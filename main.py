@@ -13,6 +13,7 @@ from include.utilities import (
     set_seed,
     load_augmented_df,
     prepare_hf_datasets,
+    compile_configuration
 )
 from include.training import (
     train_pretrain_stage,
@@ -66,27 +67,27 @@ def main():
     parser.add_argument(
         "--config-file",
         dest="config_file",
-        action="store_true",
+        type=str,
         help="Pass a path to a config.yaml file. !!The config file could override other configurations!!",
     )
     args = parser.parse_args()
 
     if args.config_file:
-        # TODO: parsing and validating config file (https://omegaconf.readthedocs.io/en/2.3_branch/usage.html)
-        conf = OmegaConf.create()
-        pass
+        conf = OmegaConf.load(args.config_file)
     else:
         conf = OmegaConf.create()
         conf.lang = args.lang
         conf.seed = args.seed
         conf.model = args.model
-        conf.fast_dev = args.fast_dev
-        conf.fresh = args.fresh
         conf.skip_pretrain = args.skip_pretrain
         conf.freeze_bio_encoder = args.freeze_bio_encoder
         conf.use_focal_loss = args.use_focal_loss
         conf.gamma = args.gamma
         conf.weighted_sampling = args.weighted_sampling
+    
+    conf.fast_dev = args.fast_dev
+    conf.fresh = args.fresh
+
 
 
     # Fresh start
@@ -121,6 +122,10 @@ def main():
     conf.device = "cuda" if torch.cuda.is_available() else "cpu"
     set_seed(conf.seed)
     logger.info(f"Device: {conf.device}  Model: {conf.model}  Lang: {conf.lang}")
+
+    # Check configuration file
+    conf = compile_configuration(conf, logger)
+
 
     if not conf.skip_pretrain:
         # Pretrain Stage

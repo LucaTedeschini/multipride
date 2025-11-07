@@ -33,10 +33,10 @@ import include.constants as constants
 from include.networks import DualEncoderForSequenceClassification
 
 
-def train_pretrain_stage(args, logger):
+def train_pretrain_stage(conf, logger):
     # Load tokenizer and datasets
-    tokenizer = AutoTokenizer.from_pretrained(args.model)
-    df = load_augmented_df(args.lang, logger)
+    tokenizer = AutoTokenizer.from_pretrained(conf.model)
+    df = load_augmented_df(conf.lang, logger)
 
     # Use single input mode (dual_input=False) for pretrain
     train_ds, val_ds, test_ds, train_df, val_df, test_df = prepare_hf_datasets(
@@ -44,34 +44,34 @@ def train_pretrain_stage(args, logger):
         tokenizer,
         label_column="lgbt",
         logger=logger,
-        val_size=0.15,
-        test_size=0.15,
-        seed=args.seed,
+        val_size=conf.val_size_pretrain,
+        test_size=conf.test_size_pretrain,
+        seed=conf.seed,
     )
 
     # compute class weights
     class_weights = compute_class_weights_from_series(train_df["lgbt"])
     logger.info(f"Pretrain class weights: {class_weights.tolist()}")
 
-    model = AutoModelForSequenceClassification.from_pretrained(args.model, num_labels=2)
-    model.to(args.device)
+    model = AutoModelForSequenceClassification.from_pretrained(conf.model, num_labels=2)
+    model.to(conf.device)
 
     training_args = TrainingArguments(
-        output_dir=str(constants.RESULTS_DIR / "lgbt_pretrain" / f"{args.lang}" / constants.NOW),
+        output_dir=str(constants.RESULTS_DIR / "lgbt_pretrain" / f"{conf.lang}" / constants.NOW),
         eval_strategy="epoch",
         save_strategy="epoch",
-        learning_rate=2e-5,
-        per_device_train_batch_size=8,
-        per_device_eval_batch_size=8,
+        learning_rate=conf.lr_pretrain,
+        per_device_train_batch_size=conf.batch_size_pretrain,
+        per_device_eval_batch_size=conf.batch_size_pretrain,
         # gradient_accumulation_steps=4,  # effective batch size 32
-        num_train_epochs=1 if args.fast_dev else 10,
-        weight_decay=0.1,
+        num_train_epochs=1 if conf.fast_dev else 10,
+        weight_decay=conf.weight_decay_pretrain,
         load_best_model_at_end=True,
         metric_for_best_model="f1",
-        logging_dir=str(constants.OUTPUT_DIR / "lgbt_pretrain" / f"{args.lang}" / constants.NOW),
+        logging_dir=str(constants.OUTPUT_DIR / "lgbt_pretrain" / f"{conf.lang}" / constants.NOW),
         logging_steps=50,
         save_total_limit=1,
-        seed=args.seed,
+        seed=conf.seed,
         report_to="tensorboard",
     )
 
@@ -82,8 +82,8 @@ def train_pretrain_stage(args, logger):
         eval_dataset=val_ds,
         compute_metrics=compute_metrics,
         class_weights=class_weights,
-        use_focal_loss=args.use_focal_loss,
-        gamma=args.gamma,
+        use_focal_loss=conf.use_focal_loss,
+        gamma=conf.gamma,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
     logger.info("Starting pre-training...")
@@ -92,31 +92,31 @@ def train_pretrain_stage(args, logger):
     return trainer, tokenizer, train_df, val_df, test_df, df
 
 
-def train_main_stage(args, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder: bool = False):
+def train_main_stage(conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder: bool = False):
     train_ds, val_ds, test_ds, train_df, val_df, test_df, sampler = prepare_hf_weighted_datasets(
         full_df,
         tokenizer,
         label_column="label",
         logger=logger,
-        val_size=0.15,
-        test_size=0.15,
-        seed=args.seed,
+        val_size=conf.val_size_mainstage,
+        test_size=conf.test_size_mainstage,
+        seed=conf.seed,
     )
 
     class_weights = compute_class_weights_from_series(train_df["label"])
     logger.info(f"Main task class weights: {class_weights.tolist()}")
 
     # Build Dual Encoder
-    config = AutoConfig.from_pretrained(args.model, num_labels=2)
+    config = AutoConfig.from_pretrained(conf.model, num_labels=2)
     config.class_weights = class_weights.tolist()
     combined = DualEncoderForSequenceClassification(
         config,
-        use_focal_loss=args.use_focal_loss,
-        gamma=args.gamma,
+        use_focal_loss=conf.use_focal_loss,
+        gamma=conf.gamma,
     )
 
     # Load base encoder weights for text encoder (fresh from pretrained)
-    base_model = AutoModel.from_pretrained(args.model)
+    base_model = AutoModel.from_pretrained(conf.model)
     combined.encoder_text.load_state_dict(base_model.state_dict(), strict=True)
     logger.info("Loaded fresh pretrained weights into encoder_text")
 
@@ -164,24 +164,24 @@ def train_main_stage(args, logger, pretrain_trainer, tokenizer, full_df, freeze_
     if torch.cuda.is_available():
         torch.cuda.empty_cache()
 
-    combined.to(args.device)
+    combined.to(conf.device)
 
     training_args = TrainingArguments(
-        output_dir=str(constants.RESULTS_DIR / "dual_encoder" / f"{args.lang}" / constants.NOW),
+        output_dir=str(constants.RESULTS_DIR / "dual_encoder" / f"{conf.lang}" / constants.NOW),
         eval_strategy="epoch",
         save_strategy="epoch",
-        learning_rate=2e-5,
-        per_device_train_batch_size=8,
-        per_device_eval_batch_size=8,
+        learning_rate=conf.lr_mainstage,
+        per_device_train_batch_size=conf.batch_size_mainstage,
+        per_device_eval_batch_size=conf.batch_size_mainstage,
         # gradient_accumulation_steps=4,  # effective batch size 32
-        num_train_epochs=1 if args.fast_dev else 10,
-        weight_decay=0.1,
+        num_train_epochs=1 if conf.fast_dev else 10,
+        weight_decay=conf.weight_decay_mainstage,
         load_best_model_at_end=True,
         metric_for_best_model="f1",
-        logging_dir=str(constants.OUTPUT_DIR / "dual_encoder" / f"{args.lang}" / constants.NOW),
+        logging_dir=str(constants.OUTPUT_DIR / "dual_encoder" / f"{conf.lang}" / constants.NOW),
         logging_steps=50,
         save_total_limit=1,
-        seed=args.seed,
+        seed=conf.seed,
         report_to="tensorboard",
     )
 
@@ -194,7 +194,7 @@ def train_main_stage(args, logger, pretrain_trainer, tokenizer, full_df, freeze_
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
 
-    if args.weighted_sampling:
+    if conf.weighted_sampling:
         logger.info("Using WeightedRandomSampler for training")
 
         # Replace the default sampler
