@@ -26,7 +26,7 @@ SALIDA: 1"""
 
 ## Data Loading ##
 console.print("[bold]Loading dataset...[/bold]")
-ita = pd.read_csv("dataset/train_es.csv")
+ita = pd.read_csv("../test_set/es_test.csv")
 console.print("[bold green]Dataset loaded.[/bold green]")
 
 ## API Processing ##
@@ -62,6 +62,6 @@ for text, bio in track(iterable, description="[cyan]Processing entries...[/cyan]
 ## Finalizing ##
 ita["lgbt"] = lgbt
 console.print("\n[bold yellow]Saving augmented dataset...[/bold yellow]")
-ita.to_csv("augmented_es.csv", index=False)
+ita.to_csv("../test_set/augmented_es.csv", index=False)
 console.print("[bold green]:white_check_mark: File saved as [cyan]augmented_es.csv[/cyan][/bold green]")
 console.print(ita.head())
