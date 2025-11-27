@@ -252,3 +252,94 @@ def prepare_hf_weighted_datasets(
     logger.info(f"Prepared HF datasets and tokenized.")
 
     return train_ds, val_ds, test_ds, train_df, val_df, test_df, sampler
+
+
+def compile_configuration(config, logger):
+
+    if not hasattr(config, "lpft"):
+        logger.warning("lpft not set by config file. Assuming standard training")
+        config.lpft = False
+
+    if not hasattr(config, "val_size_pretrain"):
+        logger.warning("val_size_pretrain not set by config file. Setting to default value 0.15")
+        config.val_size_pretrain = 0.15
+    
+    if not hasattr(config, "test_size_pretrain"):
+        logger.warning("test_size_pretrain not set by config file. Setting to default value 0.15")
+        config.test_size_pretrain = 0.15
+    
+    if not hasattr(config, "lr_pretrain"):
+        logger.warning("lr_pretrain not set by config file. Setting to default value 2e-5")
+        config.lr_pretrain = 2e-5
+
+    if not hasattr(config, "batch_size_pretrain"):
+        logger.warning("batch_size_pretrain not set by config file. Setting to default value 8")
+        config.batch_size_pretrain = 8
+
+    if not hasattr(config, "weight_decay_pretrain"):
+        logger.warning("weight_decay_pretrain not set by config file. Setting to default value 0.1")
+        config.weight_decay_pretrain = 0.1
+    
+    # Different setting based on LPFT
+
+    if config.lpft:
+        if not hasattr(config, "val_size_lpft"):
+            logger.warning("val_size_lpft not set by config file. Setting to default value 0.15")
+            config.val_size_lpft = 0.15
+
+        if not hasattr(config, "test_size_lpft"):
+            logger.warning("test_size_lpft not set by config file. Setting to default value 0.15")
+            config.test_size_lpft = 0.15
+
+        if not hasattr(config, "lr_lp"):
+            logger.warning("lr_lp not set by config file. Setting to default value 2e-5")
+            config.lr_lp = 2e-5
+
+
+        if not hasattr(config, "batch_size_lp"):
+            logger.warning("batch_size_lp not set by config file. Setting to default value 8")
+            config.batch_size_lp = 8
+        
+        if not hasattr(config, "weight_decay_lp"):
+            logger.warning("weight_decay_lp not set by config file. Setting to default value 0.1")
+            config.weight_decay_lp = 0.1
+
+        if not hasattr(config, "lr_ft"):
+            logger.warning("lr_ft not set by config file. Setting to default value 5e-6")
+            config.lr_ft = 2e-5
+
+
+        if not hasattr(config, "batch_size_ft"):
+            logger.warning("batch_size_ft not set by config file. Setting to default value 8")
+            config.batch_size_ft = 8
+        
+        if not hasattr(config, "weight_decay_ft"):
+            logger.warning("weight_decay_ft not set by config file. Setting to default value 0.1")
+            config.weight_decay_ft = 0.1
+
+
+    else:
+        if not hasattr(config, "val_size_mainstage"):
+            logger.warning("val_size_mainstage not set by config file. Setting to default value 0.15")
+            config.val_size_mainstage = 0.15
+
+        if not hasattr(config, "test_size_mainstage"):
+            logger.warning("test_size_mainstage not set by config file. Setting to default value 0.15")
+            config.test_size_mainstage = 0.15
+
+        if not hasattr(config, "lr_mainstage"):
+            logger.warning("lr_mainstage not set by config file. Setting to default value 2e-5")
+            config.lr_mainstage = 2e-5
+
+
+        if not hasattr(config, "batch_size_mainstage"):
+            logger.warning("batch_size_mainstage not set by config file. Setting to default value 8")
+            config.batch_size_mainstage = 8
+        
+        if not hasattr(config, "weight_decay_mainstage"):
+            logger.warning("weight_decay_mainstage not set by config file. Setting to default value 0.1")
+            config.weight_decay_mainstage = 0.1
+
+    return config
+
+    

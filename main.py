@@ -13,11 +13,13 @@ from include.utilities import (
     set_seed,
     load_augmented_df,
     prepare_hf_datasets,
+    compile_configuration
 )
 from include.training import (
     train_pretrain_stage,
     train_main_stage,
-    evaluate_and_save
+    evaluate_and_save,
+    train_main_stage_LPFT
 )
 
 
@@ -66,27 +68,28 @@ def main():
     parser.add_argument(
         "--config-file",
         dest="config_file",
-        action="store_true",
+        type=str,
         help="Pass a path to a config.yaml file. !!The config file could override other configurations!!",
     )
     args = parser.parse_args()
 
     if args.config_file:
-        # TODO: parsing and validating config file (https://omegaconf.readthedocs.io/en/2.3_branch/usage.html)
-        conf = OmegaConf.create()
-        pass
+        conf = OmegaConf.load(args.config_file)
     else:
         conf = OmegaConf.create()
         conf.lang = args.lang
         conf.seed = args.seed
         conf.model = args.model
-        conf.fast_dev = args.fast_dev
-        conf.fresh = args.fresh
         conf.skip_pretrain = args.skip_pretrain
         conf.freeze_bio_encoder = args.freeze_bio_encoder
         conf.use_focal_loss = args.use_focal_loss
         conf.gamma = args.gamma
         conf.weighted_sampling = args.weighted_sampling
+    
+    # README: these parameters are not overrided by the config file
+    conf.fast_dev = args.fast_dev
+    conf.fresh = args.fresh
+
 
 
     # Fresh start
@@ -122,6 +125,10 @@ def main():
     set_seed(conf.seed)
     logger.info(f"Device: {conf.device}  Model: {conf.model}  Lang: {conf.lang}")
 
+    # Check configuration file
+    conf = compile_configuration(conf, logger)
+
+
     if not conf.skip_pretrain:
         # Pretrain Stage
         pretrain_trainer, tokenizer, train_df, val_df, test_df_pretrain, full_df = train_pretrain_stage(conf, logger)
@@ -144,10 +151,16 @@ def main():
         tokenizer = AutoTokenizer.from_pretrained(conf.model)
         full_df = load_augmented_df(conf.lang, logger)
 
-    # Main Stage
-    main_trainer, test_dataset = train_main_stage(
-        conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=conf.freeze_bio_encoder
-    )
+    if not conf.lpft:
+        # Main Stage
+        main_trainer, test_dataset = train_main_stage(
+            conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=conf.freeze_bio_encoder
+        )
+    else:
+        # Main Stage (LP-FT)
+        main_trainer, test_dataset = train_main_stage_LPFT(
+            conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=conf.freeze_bio_encoder
+        )
 
     # Evaluate on test set
     logger.info("Evaluating main model on test set...")

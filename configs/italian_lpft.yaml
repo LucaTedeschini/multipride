@@ -1,0 +1,29 @@
+lang : "it"
+model : "nickprock/setfit-italian-hate-speech"
+seed : 42
+skip_pretrain : false
+freeze_bio_encoder : false
+use_focal_loss : false
+gamma : 2.0
+weighted_sampling : false
+#Use LPFT
+lpft : true
+# Pre train LGBT model
+val_size_pretrain : 0.15
+test_size_pretrain : 0.15
+lr_pretrain : 2e-5
+batch_size_pretrain : 8
+weight_decay_pretrain : 0.1
+#LPFT setting
+# LP settings
+lr_lp : 2e-5
+batch_size_lp : 8
+weight_decay_lp : 0.1
+# FT settings
+lr_ft : 5e-6
+batch_size_ft : 8
+weight_decay_ft : 0.1
+# Common settings
+val_size_lpft : 0.15
+test_size_lpft : 0.15
+
