@@ -6,7 +6,7 @@ from omegaconf import OmegaConf
 from transformers import (
     AutoTokenizer,
 )
-
+import numpy as np
 import include.constants as constants
 from include.constants import MODELS
 from include.utilities import (
@@ -100,6 +100,9 @@ def main():
     conf.fresh = args.fresh
     conf.is_evaluation = args.is_evaluation
 
+    if not hasattr(conf, "name"):
+        conf.name = "default"
+
 
     # Fresh start
     if conf.fresh:
@@ -173,7 +176,7 @@ def main():
 
     # Evaluate on test set
     logger.info("Evaluating main model on test set...")
-    evaluate_and_save(main_trainer, test_dataset, logger, out_prefix="dual_encoder")
+    cm = evaluate_and_save(main_trainer, test_dataset, logger, out_prefix="dual_encoder")
 
     if conf.is_evaluation:
         # Run the trained model on the test set
@@ -185,10 +188,12 @@ def main():
         
         print(submission_results)
         os.makedirs("submission", exist_ok=True)
+        os.makedirs(f"submission/{conf.name}", exist_ok=True)
         logging.info(f"SAVING PREDICTIONS TO submission/{conf.lang}.tsv...")
-        submission_results.to_csv(f"submission/{conf.lang}.tsv", sep="\t", index=False)
-        raw_results.to_csv(f"submission/raw_{conf.lang}.tsv", sep="\t", index=False)
-        readable_results.to_csv(f"submission/readable_{conf.lang}.tsv", sep="\t", index=False)
+        submission_results.to_csv(f"submission/{conf.name}/{conf.lang}.tsv", sep="\t", index=False)
+        raw_results.to_csv(f"submission/{conf.name}/raw_{conf.lang}.tsv", sep="\t", index=False)
+        readable_results.to_csv(f"submission/{conf.name}/readable_{conf.lang}.tsv", sep="\t", index=False)
+        np.savetxt(f"submission/{conf.name}/cm.txt", cm, fmt="%.4f")
         logging.info("DONE!")
 
     logger.info("All done.")

@@ -27,10 +27,13 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
         hidden_size = config.hidden_size
 
         self.gate_layer = nn.Sequential(
-            nn.Linear(hidden_size * 2, hidden_size), nn.Tanh(), nn.Linear(hidden_size, hidden_size), nn.Sigmoid()
+            nn.Linear(hidden_size * 2, hidden_size, dtype=torch.bfloat16),
+            nn.Tanh(),
+            nn.Linear(hidden_size, hidden_size,dtype=torch.bfloat16),
+            nn.Sigmoid()
         )
         self.dropout = nn.Dropout(getattr(config, "hidden_dropout_prob", 0.1))
-        self.classifier = nn.Linear(hidden_size, config.num_labels)
+        self.classifier = nn.Linear(hidden_size, config.num_labels, dtype=torch.bfloat16)
         self.use_focal_loss = use_focal_loss
         self.gamma = gamma
         self.post_init()
@@ -53,7 +56,7 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
         if labels is not None:
             cw = None
             if hasattr(self.config, "class_weights") and self.config.class_weights is not None:
-                cw = torch.tensor(self.config.class_weights, device=logits.device, dtype=torch.float)
+                cw = torch.tensor(self.config.class_weights, device=logits.device, dtype=torch.bfloat16)
             if self.use_focal_loss:
                 loss_fct = FocalLoss(gamma=self.gamma, weight=cw)
             else:

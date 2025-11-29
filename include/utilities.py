@@ -58,6 +58,11 @@ class WeightedTrainer(Trainer):
 
         outputs = model(**{k: v for k, v in inputs.items() if k != "labels"})
         logits = outputs.logits
+
+        current_weights = self.class_weights
+        if current_weights is not None and current_weights.dtype != logits.dtype:
+            current_weights = current_weights.to(dtype=logits.dtype)
+
         if self.use_focal_loss:
             loss_fct = FocalLoss(gamma=self.gamma, weight=self.class_weights)
         else:

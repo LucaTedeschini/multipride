@@ -109,7 +109,7 @@ def train_main_stage(conf, logger, pretrain_trainer, tokenizer, full_df, freeze_
     logger.info(f"Main task class weights: {class_weights.tolist()}")
 
     # Build Dual Encoder
-    config = AutoConfig.from_pretrained(conf.model, num_labels=2)
+    config = AutoConfig.from_pretrained(conf.model, num_labels=2, dtype=torch.bfloat16)
     config.class_weights = class_weights.tolist()
     combined = DualEncoderForSequenceClassification(
         config,
@@ -226,7 +226,7 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
     logger.info(f"Main task class weights: {class_weights.tolist()}")
 
     # Build Dual Encoder
-    config = AutoConfig.from_pretrained(conf.model, num_labels=2)
+    config = AutoConfig.from_pretrained(conf.model, num_labels=2, dtype=torch.bfloat16)
     config.class_weights = class_weights.tolist()
     combined = DualEncoderForSequenceClassification(
         config,
@@ -331,7 +331,7 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
 
     # Fine tuning
     for param in combined.encoder_text.parameters():
-            param.requires_grad = False
+            param.requires_grad = True
 
     training_args = TrainingArguments(
         output_dir=str(constants.RESULTS_DIR / "dual_encoder" / f"{conf.lang}" / constants.NOW),
@@ -378,7 +378,7 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
     return trainer, test_ds
 
 
-def evaluate_and_save(trainer: Trainer, test_dataset: HFDataset, logger: logging.Logger, out_prefix="results"):
+def evaluate_and_save(trainer: Trainer, test_dataset: HFDataset, logger: logging.Logger, out_prefix="results") -> np.ndarray:
     preds_out = trainer.predict(test_dataset)
     metrics = getattr(preds_out, "metrics", {}) or {}
     logger.info(f"Test set metrics: {metrics}")
@@ -439,6 +439,8 @@ def evaluate_and_save(trainer: Trainer, test_dataset: HFDataset, logger: logging
         plt.close()
     else:
         logger.warning("Predictions or label_ids not found in trainer.predict output; skipping error analysis.")
+    
+    return cm
 
 def run_test_evaluation(main_trainer: Trainer,
                         logger: logging.Logger,
