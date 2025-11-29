@@ -124,6 +124,18 @@ def load_augmented_df(lang: str, logger: logging.Logger) -> pd.DataFrame:
     logger.info(f"Loaded dataset for lang={lang}, length={len(df)}")
     return df
 
+def load_test_df(lang: str, logger: logging.Logger) -> pd.DataFrame:
+    # NOTE: this logic could collapse into load_augmented_df with a couple of ifs
+    files = {
+        "it": Path("test_set/augmented_it.csv"),
+        "es": Path("test_set/augmented_es.csv"),
+    }
+    df = pd.read_csv(files[lang])
+    df = df.fillna({"bio": ""})
+    df["bio"] = df["bio"].replace("", "[NO BIO]")  # Use special token for missing bios
+    logger.info(f"Loaded test dataset for lang={lang}, length={len(df)}")
+    return df
+
 def tokenize_function_single(tokenizer, max_length=128):
     """For models that use single concatenated text+bio input (pretrain stage)"""
 
@@ -138,6 +150,20 @@ def tokenize_function_single(tokenizer, max_length=128):
 
     return fn
 
+
+def prepare_test_dataset(
+    df: pd.DataFrame,
+    tokenizer,
+    logger: logging.Logger,
+):
+
+    test_ds = HFDataset.from_pandas(df.reset_index(drop=True))
+    tok = tokenize_function_single(tokenizer)
+    format_columns = ["input_ids", "attention_mask"]
+    test_ds = test_ds.map(tok, batched=True)
+    test_ds.set_format(type="torch", columns=format_columns)
+    logger.info(f"Prepared test dataset and tokenized.")
+    return test_ds
 
 def prepare_hf_datasets(
     df: pd.DataFrame,
