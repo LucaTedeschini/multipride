@@ -19,16 +19,18 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-
+import pandas as pd
 from include.utilities import (
     WeightedTrainer,
     compute_class_weights_from_series,
     compute_metrics,
     load_augmented_df,
     prepare_hf_datasets,
-    prepare_hf_weighted_datasets
+    prepare_hf_weighted_datasets,
+    load_test_df,
+    prepare_test_dataset
 )
-
+from omegaconf import OmegaConf
 import include.constants as constants
 from include.networks import DualEncoderForSequenceClassification
 
@@ -437,3 +439,28 @@ def evaluate_and_save(trainer: Trainer, test_dataset: HFDataset, logger: logging
         plt.close()
     else:
         logger.warning("Predictions or label_ids not found in trainer.predict output; skipping error analysis.")
+
+def run_test_evaluation(main_trainer: Trainer,
+                        logger: logging.Logger,
+                        tokenizer,
+                        lang: str) -> pd.DataFrame:
+    # Load the correct dataset (italian / spanish)
+    # Build the dataloader
+    # Run the inference
+    # Save results
+    if lang == "it":
+        # load italian
+        df = load_test_df(lang, logger)
+    elif lang == "es":
+        # load spanish
+        df = load_test_df(lang, logger)
+    else:
+        raise Exception("Language not recognized!")
+    
+    dataloader = prepare_test_dataset(df, tokenizer, logger)
+    raw_out = main_trainer.predict(dataloader)
+    logits = raw_out.predictions
+    predictions = np.argmax(logits, axis=-1)
+    df["label"] = predictions
+
+    return df

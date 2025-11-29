@@ -19,8 +19,10 @@ from include.training import (
     train_pretrain_stage,
     train_main_stage,
     evaluate_and_save,
-    train_main_stage_LPFT
+    train_main_stage_LPFT,
+    run_test_evaluation
 )
+import os
 
 
 def main():
@@ -71,6 +73,13 @@ def main():
         type=str,
         help="Pass a path to a config.yaml file. !!The config file could override other configurations!!",
     )
+    parser.add_argument(
+        "--is_evaluation",
+        dest="is_evaluation",
+        type=bool,
+        help="Run the trained model on the real test set, and save results",
+        default=False
+    )
     args = parser.parse_args()
 
     if args.config_file:
@@ -89,7 +98,7 @@ def main():
     # README: these parameters are not overrided by the config file
     conf.fast_dev = args.fast_dev
     conf.fresh = args.fresh
-
+    conf.is_evaluation = args.is_evaluation
 
 
     # Fresh start
@@ -165,6 +174,22 @@ def main():
     # Evaluate on test set
     logger.info("Evaluating main model on test set...")
     evaluate_and_save(main_trainer, test_dataset, logger, out_prefix="dual_encoder")
+
+    if conf.is_evaluation:
+        # Run the trained model on the test set
+        logger.info("\n\n======== STARTING EVALUATION ON TEST SET ========\n\n")
+        result_df = run_test_evaluation(main_trainer, logger, tokenizer, conf.lang)
+        raw_results = result_df
+        submission_results = result_df[["id", "label", "lang"]]
+        readable_results = result_df[["text", "label"]]
+        
+        print(submission_results)
+        os.makedirs("submission", exist_ok=True)
+        logging.info(f"SAVING PREDICTIONS TO submission/{conf.lang}.tsv...")
+        submission_results.to_csv(f"submission/{conf.lang}.tsv", sep="\t", index=False)
+        raw_results.to_csv(f"submission/raw_{conf.lang}.tsv", sep="\t", index=False)
+        readable_results.to_csv(f"submission/readable_{conf.lang}.tsv", sep="\t", index=False)
+        logging.info("DONE!")
 
     logger.info("All done.")
 
