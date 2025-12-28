@@ -80,6 +80,13 @@ def main():
         help="Run the trained model on the real test set, and save results",
         default=False
     )
+    parser.add_argument(
+        "--device",
+        type=str,
+        choices=["cpu", "cuda", "xpu", "mps"],
+        help="Device to use (e.g., 'cpu', 'cuda')",
+        default="cuda" if torch.cuda.is_available() else "cpu",
+    )
     args = parser.parse_args()
 
     if args.config_file:
@@ -94,7 +101,7 @@ def main():
         conf.use_focal_loss = args.use_focal_loss
         conf.gamma = args.gamma
         conf.weighted_sampling = args.weighted_sampling
-    
+
     # README: these parameters are not overrided by the config file
     conf.fast_dev = args.fast_dev
     conf.fresh = args.fresh
@@ -133,7 +140,7 @@ def main():
     fh.setFormatter(fmt)
     logger.addHandler(fh)
 
-    conf.device = "cuda" if torch.cuda.is_available() else "cpu"
+    conf.device = args.device
     set_seed(conf.seed)
     logger.info(f"Device: {conf.device}  Model: {conf.model}  Lang: {conf.lang}")
 
@@ -185,7 +192,7 @@ def main():
         raw_results = result_df
         submission_results = result_df[["id", "label", "lang"]]
         readable_results = result_df[["text", "label"]]
-        
+
         print(submission_results)
         os.makedirs("submission", exist_ok=True)
         os.makedirs(f"submission/{conf.name}", exist_ok=True)

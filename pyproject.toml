@@ -17,6 +17,7 @@ dependencies = [
     "huggingface-hub[hf-xet]>=0.36.0",
     "matplotlib>=3.10.7",
     "numpy==1.26.4",
+    "omegaconf>=2.3.0",
     "pandas>=2.3.3",
     "scikit-learn>=1.7.2",
     "scipy>=1.15.3",
@@ -24,6 +25,12 @@ dependencies = [
     "torch-tb-profiler>=0.4.3",
     "torch==2.8.0",
     "tqdm>=4.67.1",
+    "transformers>=4.57.3",
+]
+
+[tool.uv.sources]
+torch = [
+  { index = "pytorch-cu126" },
 ]
 
 [[tool.uv.index]]
@@ -33,6 +40,9 @@ explicit = true
 
 [tool.black]
 line-length = 120
+target-version = ['py312']
 
 [tool.isort]
+py_version = 312
 profile = "black"
+line_length = 120

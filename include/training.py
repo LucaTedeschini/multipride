@@ -75,6 +75,7 @@ def train_pretrain_stage(conf, logger):
         save_total_limit=1,
         seed=conf.seed,
         report_to="tensorboard",
+        push_to_hub=True,
     )
 
     trainer = WeightedTrainer(
@@ -88,6 +89,7 @@ def train_pretrain_stage(conf, logger):
         gamma=conf.gamma,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
+    trainer.push_to_hub("MultiPRIDE-LGBT-Pretrain", private=True)
     logger.info("Starting pre-training...")
     trainer.train()
     logger.info("Pre-training finished.")
@@ -185,6 +187,7 @@ def train_main_stage(conf, logger, pretrain_trainer, tokenizer, full_df, freeze_
         save_total_limit=1,
         seed=conf.seed,
         report_to="tensorboard",
+        push_to_hub=True,
     )
 
     trainer = Trainer(
@@ -195,6 +198,7 @@ def train_main_stage(conf, logger, pretrain_trainer, tokenizer, full_df, freeze_
         compute_metrics=compute_metrics,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
+    trainer.push_to_hub("MultiPRIDE-DualEncoder-MainStage", private=True)
 
     if conf.weighted_sampling:
         logger.info("Using WeightedRandomSampler for training")
@@ -306,6 +310,7 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
         save_total_limit=1,
         seed=conf.seed,
         report_to="tensorboard",
+        push_to_hub=True,
     )
 
     trainer = Trainer(
@@ -316,6 +321,7 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
         compute_metrics=compute_metrics,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
+    trainer.push_to_hub("MultiPRIDE-DualEncoder-LPFT", private=True)
 
     if conf.weighted_sampling:
         logger.info("Using WeightedRandomSampler for training")
@@ -350,6 +356,7 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
         save_total_limit=1,
         seed=conf.seed,
         report_to="tensorboard",
+        push_to_hub=True,
     )
 
     trainer = Trainer(
@@ -360,6 +367,7 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
         compute_metrics=compute_metrics,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
+    trainer.push_to_hub("MultiPRIDE-DualEncoder-MainStage-FT", private=True)
 
     if conf.weighted_sampling:
         logger.info("Using WeightedRandomSampler for training")
@@ -369,7 +377,7 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
             return sampler
 
         trainer._get_train_sampler = get_train_sampler
-    
+
 
     logger.info("Starting fine tuning training...")
     trainer.train()
@@ -439,7 +447,7 @@ def evaluate_and_save(trainer: Trainer, test_dataset: HFDataset, logger: logging
         plt.close()
     else:
         logger.warning("Predictions or label_ids not found in trainer.predict output; skipping error analysis.")
-    
+
     return cm
 
 def run_test_evaluation(main_trainer: Trainer,
@@ -458,7 +466,7 @@ def run_test_evaluation(main_trainer: Trainer,
         df = load_test_df(lang, logger)
     else:
         raise Exception("Language not recognized!")
-    
+
     dataloader = prepare_test_dataset(df, tokenizer, logger)
     raw_out = main_trainer.predict(dataloader)
     logits = raw_out.predictions

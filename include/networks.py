@@ -1,13 +1,10 @@
 import torch
 from torch import nn
-from transformers import (
-    AutoConfig,
-    AutoModel,
-    PreTrainedModel,
-)
+from transformers import AutoConfig, AutoModel, PreTrainedModel
 from transformers.modeling_outputs import SequenceClassifierOutput
 
 from include.losses import FocalLoss
+
 
 # --- Dual encoder model ---
 class DualEncoderForSequenceClassification(PreTrainedModel):
@@ -18,6 +15,7 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
         config,
         use_focal_loss: bool = False,
         gamma: float = 2.0,
+        dtype: torch.dtype = torch.bfloat16,
     ):
         super().__init__(config)
         self.num_labels = config.num_labels
@@ -27,15 +25,16 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
         hidden_size = config.hidden_size
 
         self.gate_layer = nn.Sequential(
-            nn.Linear(hidden_size * 2, hidden_size, dtype=torch.bfloat16),
+            nn.Linear(hidden_size * 2, hidden_size, dtype=dtype),
             nn.Tanh(),
-            nn.Linear(hidden_size, hidden_size,dtype=torch.bfloat16),
-            nn.Sigmoid()
+            nn.Linear(hidden_size, hidden_size, dtype=dtype),
+            nn.Sigmoid(),
         )
         self.dropout = nn.Dropout(getattr(config, "hidden_dropout_prob", 0.1))
-        self.classifier = nn.Linear(hidden_size, config.num_labels, dtype=torch.bfloat16)
+        self.classifier = nn.Linear(hidden_size, config.num_labels, dtype=dtype)
         self.use_focal_loss = use_focal_loss
         self.gamma = gamma
+        self.dtype = dtype
         self.post_init()
 
     def forward(self, input_ids=None, attention_mask=None, labels=None, return_dict=True):
@@ -56,7 +55,7 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
         if labels is not None:
             cw = None
             if hasattr(self.config, "class_weights") and self.config.class_weights is not None:
-                cw = torch.tensor(self.config.class_weights, device=logits.device, dtype=torch.bfloat16)
+                cw = torch.tensor(self.config.class_weights, device=logits.device, dtype=self.dtype)
             if self.use_focal_loss:
                 loss_fct = FocalLoss(gamma=self.gamma, weight=cw)
             else:

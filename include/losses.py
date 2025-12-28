@@ -1,9 +1,11 @@
+from typing import Optional
+
 import torch
 from torch import nn
 
 
 class FocalLoss(nn.Module):
-    def __init__(self, gamma: float = 2.0, weight: torch.Tensor | None = None):
+    def __init__(self, gamma: float = 2.0, weight: Optional[torch.Tensor] = None):
         super().__init__()
         self.gamma = gamma
         self.ce = nn.CrossEntropyLoss(weight=weight, reduction="mean")
