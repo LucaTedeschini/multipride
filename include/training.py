@@ -3,9 +3,11 @@ import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
+import pandas as pd
 import seaborn as sns
 import torch
 from datasets import Dataset as HFDataset
+from omegaconf import OmegaConf
 from scipy.special import softmax
 from sklearn.metrics import (
     confusion_matrix,
@@ -19,20 +21,19 @@ from transformers import (
     Trainer,
     TrainingArguments,
 )
-import pandas as pd
+
+import include.constants as constants
+from include.networks import DualEncoderForSequenceClassification
 from include.utilities import (
     WeightedTrainer,
     compute_class_weights_from_series,
     compute_metrics,
     load_augmented_df,
+    load_test_df,
     prepare_hf_datasets,
     prepare_hf_weighted_datasets,
-    load_test_df,
-    prepare_test_dataset
+    prepare_test_dataset,
 )
-from omegaconf import OmegaConf
-import include.constants as constants
-from include.networks import DualEncoderForSequenceClassification
 
 
 def train_pretrain_stage(conf, logger):
@@ -289,7 +290,6 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
 
     combined.to(conf.device)
 
-
     for param in combined.encoder_text.parameters():
         param.requires_grad = False
 
@@ -337,7 +337,7 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
 
     # Fine tuning
     for param in combined.encoder_text.parameters():
-            param.requires_grad = True
+        param.requires_grad = True
 
     training_args = TrainingArguments(
         output_dir=str(constants.RESULTS_DIR / "dual_encoder" / f"{conf.lang}" / constants.NOW),
@@ -378,7 +378,6 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
 
         trainer._get_train_sampler = get_train_sampler
 
-
     logger.info("Starting fine tuning training...")
     trainer.train()
 
@@ -386,7 +385,9 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
     return trainer, test_ds
 
 
-def evaluate_and_save(trainer: Trainer, test_dataset: HFDataset, logger: logging.Logger, out_prefix="results") -> np.ndarray:
+def evaluate_and_save(
+    trainer: Trainer, test_dataset: HFDataset, logger: logging.Logger, out_prefix="results"
+) -> np.ndarray:
     preds_out = trainer.predict(test_dataset)
     metrics = getattr(preds_out, "metrics", {}) or {}
     logger.info(f"Test set metrics: {metrics}")
@@ -450,10 +451,8 @@ def evaluate_and_save(trainer: Trainer, test_dataset: HFDataset, logger: logging
 
     return cm
 
-def run_test_evaluation(main_trainer: Trainer,
-                        logger: logging.Logger,
-                        tokenizer,
-                        lang: str) -> pd.DataFrame:
+
+def run_test_evaluation(main_trainer: Trainer, logger: logging.Logger, tokenizer, lang: str) -> pd.DataFrame:
     # Load the correct dataset (italian / spanish)
     # Build the dataloader
     # Run the inference

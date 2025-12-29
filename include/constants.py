@@ -1,6 +1,5 @@
-from pathlib import Path
 from datetime import datetime
-
+from pathlib import Path
 
 MODELS = [
     "nickprock/setfit-italian-hate-speech",

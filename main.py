@@ -1,28 +1,25 @@
 import argparse
 import logging
+import os
 import shutil
+
+import numpy as np
 import torch
 from omegaconf import OmegaConf
 from transformers import (
     AutoTokenizer,
 )
-import numpy as np
+
 import include.constants as constants
 from include.constants import MODELS
-from include.utilities import (
-    set_seed,
-    load_augmented_df,
-    prepare_hf_datasets,
-    compile_configuration
-)
 from include.training import (
-    train_pretrain_stage,
-    train_main_stage,
     evaluate_and_save,
+    run_test_evaluation,
+    train_main_stage,
     train_main_stage_LPFT,
-    run_test_evaluation
+    train_pretrain_stage,
 )
-import os
+from include.utilities import compile_configuration, load_augmented_df, prepare_hf_datasets, set_seed
 
 
 def main():
@@ -78,7 +75,7 @@ def main():
         dest="is_evaluation",
         type=bool,
         help="Run the trained model on the real test set, and save results",
-        default=False
+        default=False,
     )
     parser.add_argument(
         "--device",
@@ -109,7 +106,6 @@ def main():
 
     if not hasattr(conf, "name"):
         conf.name = "default"
-
 
     # Fresh start
     if conf.fresh:
@@ -146,7 +142,6 @@ def main():
 
     # Check configuration file
     conf = compile_configuration(conf, logger)
-
 
     if not conf.skip_pretrain:
         # Pretrain Stage
