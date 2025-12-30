@@ -1,10 +1,10 @@
-name : "es_no_focal_cardiff"
-lang : "es"
-model : "cardiffnlp/twitter-xlm-roberta-base-hate-spanish"
-seed : 67
+name : "it_focal"
+lang : "it"
+model : "nickprock/setfit-italian-hate-speech"
+seed : 1337
 skip_pretrain : false
 freeze_bio_encoder : false
-use_focal_loss : false
+use_focal_loss : true
 gamma : 2.0
 weighted_sampling : false
 #Use LPFT
