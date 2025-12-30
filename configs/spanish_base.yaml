@@ -1,7 +1,7 @@
 #Basic settings
-name : "baseline_it"
-lang : "it"
-model : "nickprock/setfit-italian-hate-speech"
+name : "baseline_es"
+lang : "es"
+model : "cardiffnlp/twitter-xlm-roberta-base-hate-spanish"
 seed : 1337
 skip_pretrain : false
 freeze_bio_encoder : false
