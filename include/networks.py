@@ -34,7 +34,7 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
         self.classifier = nn.Linear(hidden_size, config.num_labels, dtype=dtype)
         self.use_focal_loss = use_focal_loss
         self.gamma = gamma
-        self.dtype = dtype
+        self.manual_dtype = dtype
         self.post_init()
 
     def forward(self, input_ids=None, attention_mask=None, labels=None, return_dict=True):
@@ -55,7 +55,7 @@ class DualEncoderForSequenceClassification(PreTrainedModel):
         if labels is not None:
             cw = None
             if hasattr(self.config, "class_weights") and self.config.class_weights is not None:
-                cw = torch.tensor(self.config.class_weights, device=logits.device, dtype=self.dtype)
+                cw = torch.tensor(self.config.class_weights, device=logits.device, dtype=self.manual_dtype)
             if self.use_focal_loss:
                 loss_fct = FocalLoss(gamma=self.gamma, weight=cw)
             else:

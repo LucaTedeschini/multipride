@@ -158,7 +158,7 @@ def main():
             logger=logger,
             seed=conf.seed,
         )
-        evaluate_and_save(pretrain_trainer, pretrain_test_ds, logger, out_prefix="lgbt_pretrain")
+        evaluate_and_save(conf, pretrain_trainer, pretrain_test_ds, logger, out_prefix="lgbt_pretrain")
     else:
         logger.info("Skipping pretrain stage")
         pretrain_trainer = None
@@ -178,7 +178,7 @@ def main():
 
     # Evaluate on test set
     logger.info("Evaluating main model on test set...")
-    cm = evaluate_and_save(main_trainer, test_dataset, logger, out_prefix="dual_encoder")
+    cm = evaluate_and_save(conf, main_trainer, test_dataset, logger, out_prefix="dual_encoder")
 
     if conf.is_evaluation:
         # Run the trained model on the test set

@@ -76,7 +76,9 @@ def train_pretrain_stage(conf, logger):
         save_total_limit=1,
         seed=conf.seed,
         report_to="tensorboard",
-        push_to_hub=True,
+        push_to_hub=False,
+        hub_private_repo = True,
+        hub_model_id=f"MultiPRIDE-LGBT-Pretrain-{conf.lang}",
     )
 
     trainer = WeightedTrainer(
@@ -90,9 +92,9 @@ def train_pretrain_stage(conf, logger):
         gamma=conf.gamma,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
-    trainer.push_to_hub("MultiPRIDE-LGBT-Pretrain", private=True)
     logger.info("Starting pre-training...")
     trainer.train()
+    trainer.push_to_hub(f"MultiPRIDE-LGBT-Pretrain-{conf.lang}")
     logger.info("Pre-training finished.")
     return trainer, tokenizer, train_df, val_df, test_df, df
 
@@ -188,7 +190,9 @@ def train_main_stage(conf, logger, pretrain_trainer, tokenizer, full_df, freeze_
         save_total_limit=1,
         seed=conf.seed,
         report_to="tensorboard",
-        push_to_hub=True,
+        push_to_hub=False,
+        hub_private_repo = True,
+        hub_model_id=f"MultiPRIDE-DualEncoder-MainStage-{conf.lang}",
     )
 
     trainer = Trainer(
@@ -199,7 +203,6 @@ def train_main_stage(conf, logger, pretrain_trainer, tokenizer, full_df, freeze_
         compute_metrics=compute_metrics,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
-    trainer.push_to_hub("MultiPRIDE-DualEncoder-MainStage", private=True)
 
     if conf.weighted_sampling:
         logger.info("Using WeightedRandomSampler for training")
@@ -212,6 +215,7 @@ def train_main_stage(conf, logger, pretrain_trainer, tokenizer, full_df, freeze_
 
     logger.info("Starting main task training...")
     trainer.train()
+    trainer.push_to_hub(f"MultiPRIDE-DualEncoder-MainStage-{conf.lang}")
     logger.info("Main task training finished.")
     return trainer, test_ds
 
@@ -310,7 +314,9 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
         save_total_limit=1,
         seed=conf.seed,
         report_to="tensorboard",
-        push_to_hub=True,
+        push_to_hub=False,
+        hub_private_repo = True,
+        hub_model_id=f"MultiPRIDE-DualEncoder-LPFT-{conf.lang}"
     )
 
     trainer = Trainer(
@@ -321,7 +327,6 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
         compute_metrics=compute_metrics,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
-    trainer.push_to_hub("MultiPRIDE-DualEncoder-LPFT", private=True)
 
     if conf.weighted_sampling:
         logger.info("Using WeightedRandomSampler for training")
@@ -335,6 +340,7 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
     logger.info("Starting linear prober training...")
     trainer.train()
 
+    trainer.push_to_hub(f"MultiPRIDE-DualEncoder-LPFT-{conf.lang}")
     # Fine tuning
     for param in combined.encoder_text.parameters():
         param.requires_grad = True
@@ -356,7 +362,10 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
         save_total_limit=1,
         seed=conf.seed,
         report_to="tensorboard",
-        push_to_hub=True,
+        push_to_hub=False,
+        hub_private_repo = True,
+        hub_model_id=f"MultiPRIDE-DualEncoder-MainStage-FT-{conf.lang}"
+
     )
 
     trainer = Trainer(
@@ -367,7 +376,6 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
         compute_metrics=compute_metrics,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
     )
-    trainer.push_to_hub("MultiPRIDE-DualEncoder-MainStage-FT", private=True)
 
     if conf.weighted_sampling:
         logger.info("Using WeightedRandomSampler for training")
@@ -380,13 +388,14 @@ def train_main_stage_LPFT(conf, logger, pretrain_trainer, tokenizer, full_df, fr
 
     logger.info("Starting fine tuning training...")
     trainer.train()
+    trainer.push_to_hub(f"MultiPRIDE-DualEncoder-MainStage-FT-{conf.lang}")
 
     logger.info("Main task training finished.")
     return trainer, test_ds
 
 
 def evaluate_and_save(
-    trainer: Trainer, test_dataset: HFDataset, logger: logging.Logger, out_prefix="results"
+    conf, trainer: Trainer, test_dataset: HFDataset, logger: logging.Logger, out_prefix="results"
 ) -> np.ndarray:
     preds_out = trainer.predict(test_dataset)
     metrics = getattr(preds_out, "metrics", {}) or {}
@@ -444,8 +453,14 @@ def evaluate_and_save(
         plt.title("Confusion Matrix")
         plt.ylabel("True Label")
         plt.xlabel("Predicted Label")
-        plt.savefig(constants.RESULTS_DIR / f"{out_prefix}_confusion.png")
+        plt.savefig(constants.RESULTS_DIR / f"{out_prefix}_{conf.name}_{conf.seed}_confusion.png")
         plt.close()
+
+        # Saving F1 and Acc metrics on file
+        with open(f"{constants.RESULTS_DIR}/{out_prefix}_{conf.name}_{conf.seed}.csv", "w") as f:
+            f.write("f1,acc\n")
+            f.write(f"{f1},{acc}\n")
+
     else:
         logger.warning("Predictions or label_ids not found in trainer.predict output; skipping error analysis.")
 
