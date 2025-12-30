@@ -35,6 +35,66 @@ from include.utilities import (
     prepare_test_dataset,
 )
 
+def compute_baseline(conf, logger):
+    # Load tokenizer and datasets
+    tokenizer = AutoTokenizer.from_pretrained(conf.model)
+    df = load_augmented_df(conf.lang, logger)
+
+    train_ds, val_ds, test_ds, train_df, val_df, test_df = prepare_hf_datasets(
+        df,
+        tokenizer,
+        label_column="label",
+        logger=logger,
+        val_size=conf.val_size_pretrain,
+        test_size=conf.test_size_pretrain,
+        seed=conf.seed,
+    )
+
+    # compute class weights
+    class_weights = compute_class_weights_from_series(train_df["label"])
+    logger.info(f"Pretrain class weights: {class_weights.tolist()}")
+
+    model = AutoModelForSequenceClassification.from_pretrained(conf.model, num_labels=2)
+    model.to(conf.device)
+
+    training_args = TrainingArguments(
+        output_dir=str(constants.RESULTS_DIR / "baseline" / f"{conf.lang}" / constants.NOW),
+        eval_strategy="epoch",
+        save_strategy="epoch",
+        learning_rate=conf.lr_pretrain,
+        per_device_train_batch_size=conf.batch_size_pretrain,
+        per_device_eval_batch_size=conf.batch_size_pretrain,
+        num_train_epochs=1 if conf.fast_dev else 10,
+        weight_decay=conf.weight_decay_pretrain,
+        load_best_model_at_end=True,
+        metric_for_best_model="f1",
+        logging_dir=str(constants.OUTPUT_DIR / "baseline" / f"{conf.lang}" / constants.NOW),
+        logging_steps=50,
+        save_total_limit=1,
+        seed=conf.seed,
+        report_to="tensorboard",
+        push_to_hub=False,
+        hub_private_repo = True,
+        hub_model_id=f"MultiPRIDE-baseline-{conf.lang}",
+    )
+
+    trainer = WeightedTrainer(
+        model=model,
+        args=training_args,
+        train_dataset=train_ds,
+        eval_dataset=val_ds,
+        compute_metrics=compute_metrics,
+        class_weights=class_weights,
+        use_focal_loss=conf.use_focal_loss,
+        gamma=conf.gamma,
+        callbacks=[EarlyStoppingCallback(early_stopping_patience=3)],
+    )
+    logger.info("Starting pre-training...")
+    trainer.train()
+    trainer.push_to_hub(f"MultiPRIDE-LGBT-Baseline-{conf.lang}")
+    logger.info("Pre-training finished.")
+    return trainer, tokenizer, train_df, val_df, test_df, df
+
 
 def train_pretrain_stage(conf, logger):
     # Load tokenizer and datasets

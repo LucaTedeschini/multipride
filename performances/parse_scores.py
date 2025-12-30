@@ -15,7 +15,7 @@ results = defaultdict(lambda: defaultdict(lambda: defaultdict(list)))
 # 2. .*?: Ignora qualsiasi cosa nel mezzo (non-greedy)
 # 3. _(\d+): Cattura l'underscore seguito dai numeri (Gruppo 2, il Seed)
 # 4. \.csv$: Assicura che finisca con .csv
-csv_pattern = re.compile(r"(dual_encoder|lgbt_pretrain).*?_(\d+)\.csv$")
+csv_pattern = re.compile(r"(dual_encoder|lgbt_pretrain|baseline).*?_(\d+)\.csv$")
 
 print(f"Scanning directory: {BASE_DIR}\n")
 

@@ -18,6 +18,7 @@ from include.training import (
     train_main_stage,
     train_main_stage_LPFT,
     train_pretrain_stage,
+    compute_baseline
 )
 from include.utilities import compile_configuration, load_augmented_df, prepare_hf_datasets, set_seed
 
@@ -141,62 +142,78 @@ def main():
     logger.info(f"Device: {conf.device}  Model: {conf.model}  Lang: {conf.lang}")
 
     # Check configuration file
+
     conf = compile_configuration(conf, logger)
+    if conf.compute_baseline if hasattr(conf, "compute_baseline") else False:
+        logger.info("Training baseline...")
+        pretrain_trainer, tokenizer, train_df, val_df, test_df_pretrain, full_df = compute_baseline(conf, logger)
 
-    if not conf.skip_pretrain:
-        # Pretrain Stage
-        pretrain_trainer, tokenizer, train_df, val_df, test_df_pretrain, full_df = train_pretrain_stage(conf, logger)
-
-        # Evaluate pretrain stage on test set
-        logger.info("Evaluating pretrain stage on test set...")
+        logger.info("Evaluating baseline on test set...")
         tokenizer_temp = AutoTokenizer.from_pretrained(conf.model)
         df_temp = load_augmented_df(conf.lang, logger)
         _, _, pretrain_test_ds, _, _, _ = prepare_hf_datasets(
             df_temp,
             tokenizer_temp,
-            label_column="lgbt",
+            label_column="label",
             logger=logger,
             seed=conf.seed,
         )
-        evaluate_and_save(conf, pretrain_trainer, pretrain_test_ds, logger, out_prefix="lgbt_pretrain")
+        evaluate_and_save(conf, pretrain_trainer, pretrain_test_ds, logger, out_prefix="baseline") 
     else:
-        logger.info("Skipping pretrain stage")
-        pretrain_trainer = None
-        tokenizer = AutoTokenizer.from_pretrained(conf.model)
-        full_df = load_augmented_df(conf.lang, logger)
+        if not conf.skip_pretrain:
+            # Pretrain Stage
+            pretrain_trainer, tokenizer, train_df, val_df, test_df_pretrain, full_df = train_pretrain_stage(conf, logger)
 
-    if not conf.lpft:
-        # Main Stage
-        main_trainer, test_dataset = train_main_stage(
-            conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=conf.freeze_bio_encoder
-        )
-    else:
-        # Main Stage (LP-FT)
-        main_trainer, test_dataset = train_main_stage_LPFT(
-            conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=conf.freeze_bio_encoder
-        )
+            # Evaluate pretrain stage on test set
+            logger.info("Evaluating pretrain stage on test set...")
+            tokenizer_temp = AutoTokenizer.from_pretrained(conf.model)
+            df_temp = load_augmented_df(conf.lang, logger)
+            _, _, pretrain_test_ds, _, _, _ = prepare_hf_datasets(
+                df_temp,
+                tokenizer_temp,
+                label_column="lgbt",
+                logger=logger,
+                seed=conf.seed,
+            )
+            evaluate_and_save(conf, pretrain_trainer, pretrain_test_ds, logger, out_prefix="lgbt_pretrain")
+        else:
+            logger.info("Skipping pretrain stage")
+            pretrain_trainer = None
+            tokenizer = AutoTokenizer.from_pretrained(conf.model)
+            full_df = load_augmented_df(conf.lang, logger)
 
-    # Evaluate on test set
-    logger.info("Evaluating main model on test set...")
-    cm = evaluate_and_save(conf, main_trainer, test_dataset, logger, out_prefix="dual_encoder")
+        if not conf.lpft:
+            # Main Stage
+            main_trainer, test_dataset = train_main_stage(
+                conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=conf.freeze_bio_encoder
+            )
+        else:
+            # Main Stage (LP-FT)
+            main_trainer, test_dataset = train_main_stage_LPFT(
+                conf, logger, pretrain_trainer, tokenizer, full_df, freeze_bio_encoder=conf.freeze_bio_encoder
+            )
 
-    if conf.is_evaluation:
-        # Run the trained model on the test set
-        logger.info("\n\n======== STARTING EVALUATION ON TEST SET ========\n\n")
-        result_df = run_test_evaluation(main_trainer, logger, tokenizer, conf.lang)
-        raw_results = result_df
-        submission_results = result_df[["id", "label", "lang"]]
-        readable_results = result_df[["text", "label"]]
+        # Evaluate on test set
+        logger.info("Evaluating main model on test set...")
+        cm = evaluate_and_save(conf, main_trainer, test_dataset, logger, out_prefix="dual_encoder")
 
-        print(submission_results)
-        os.makedirs("submission", exist_ok=True)
-        os.makedirs(f"submission/{conf.name}", exist_ok=True)
-        logging.info(f"SAVING PREDICTIONS TO submission/{conf.lang}.tsv...")
-        submission_results.to_csv(f"submission/{conf.name}/{conf.lang}.tsv", sep="\t", index=False)
-        raw_results.to_csv(f"submission/{conf.name}/raw_{conf.lang}.tsv", sep="\t", index=False)
-        readable_results.to_csv(f"submission/{conf.name}/readable_{conf.lang}.tsv", sep="\t", index=False)
-        np.savetxt(f"submission/{conf.name}/cm.txt", cm, fmt="%.4f")
-        logging.info("DONE!")
+        if conf.is_evaluation:
+            # Run the trained model on the test set
+            logger.info("\n\n======== STARTING EVALUATION ON TEST SET ========\n\n")
+            result_df = run_test_evaluation(main_trainer, logger, tokenizer, conf.lang)
+            raw_results = result_df
+            submission_results = result_df[["id", "label", "lang"]]
+            readable_results = result_df[["text", "label"]]
+
+            print(submission_results)
+            os.makedirs("submission", exist_ok=True)
+            os.makedirs(f"submission/{conf.name}", exist_ok=True)
+            logging.info(f"SAVING PREDICTIONS TO submission/{conf.lang}.tsv...")
+            submission_results.to_csv(f"submission/{conf.name}/{conf.lang}.tsv", sep="\t", index=False)
+            raw_results.to_csv(f"submission/{conf.name}/raw_{conf.lang}.tsv", sep="\t", index=False)
+            readable_results.to_csv(f"submission/{conf.name}/readable_{conf.lang}.tsv", sep="\t", index=False)
+            np.savetxt(f"submission/{conf.name}/cm.txt", cm, fmt="%.4f")
+            logging.info("DONE!")
 
     logger.info("All done.")
 
