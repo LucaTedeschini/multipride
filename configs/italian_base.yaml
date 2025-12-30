@@ -3,7 +3,7 @@ compute_baseline : true
 name : "baseline_it"
 lang : "it"
 model : "nickprock/setfit-italian-hate-speech"
-seed : 150
+seed : 67
 skip_pretrain : false
 freeze_bio_encoder : false
 use_focal_loss : false

@@ -1,7 +1,7 @@
 name : "it_focal"
 lang : "it"
 model : "nickprock/setfit-italian-hate-speech"
-seed : 1337
+seed : 150
 skip_pretrain : false
 freeze_bio_encoder : false
 use_focal_loss : true

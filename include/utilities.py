@@ -77,9 +77,9 @@ def compute_class_weights_from_series(s: pd.Series) -> torch.Tensor:
 def compute_metrics_from_logits(logits, labels) -> Dict[str, float]:
     preds = np.argmax(logits, axis=-1)
     acc = float(accuracy_score(labels, preds))
-    f1 = float(f1_score(labels, preds, average="binary"))
-    precision = float(precision_score(labels, preds, average="binary"))
-    recall = float(recall_score(labels, preds, average="binary"))
+    f1 = float(f1_score(labels, preds, average="macro"))
+    precision = float(precision_score(labels, preds, average="macro"))
+    recall = float(recall_score(labels, preds, average="macro"))
     return {
         "accuracy": acc,
         "f1": f1,

@@ -1,7 +1,7 @@
 name : "es_no_focal_cardiff"
 lang : "es"
 model : "cardiffnlp/twitter-xlm-roberta-base-hate-spanish"
-seed : 1337
+seed : 150
 skip_pretrain : false
 freeze_bio_encoder : false
 use_focal_loss : false
