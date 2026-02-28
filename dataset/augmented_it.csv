@@ -1,2 +1,11 @@
 id,text,bio,label,lang,lgbt
-it_000,tweet_text,tweet_bio,0,it,0
+it_000,tweet_text,tweet_bio,1,it,1
+it_001,tweet_text,tweet_bio,0,it,1
+it_002,tweet_text,tweet_bio,0,it,1
+it_003,tweet_text,tweet_bio,0,it,1
+it_004,tweet_text,tweet_bio,0,it,1
+it_005,tweet_text,tweet_bio,1,it,0
+it_006,tweet_text,tweet_bio,0,it,0
+it_007,tweet_text,tweet_bio,0,it,0
+it_008,tweet_text,tweet_bio,0,it,0
+it_009,tweet_text,tweet_bio,1,it,0
