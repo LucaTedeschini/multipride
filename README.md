@@ -1,5 +1,9 @@
 # [Multipride Task - EVALITA 2026](https://multipride-evalita.github.io/)
 
+
+> [!WARNING]
+> **Dataset access:** Since the task organizers decided not to release the dataset, this repository contains a mock dataset to ensure the code runs properly. If you have any questions regarding this matter, please contact the authors of this work.
+
 ## Task Description
 This project addresses the Multipride challenge, a binary classification task where systems must identify whether a term related to the LGBTQ+ context is used with **reclamatory** intent.
 
