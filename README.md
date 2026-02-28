@@ -52,3 +52,18 @@ To perform the final classification, our architecture takes the hidden states fr
 
 ## Final Considerations
 We believe that user *bios* contain intrinsically richer information than tweets alone. Consequently, we focused exclusively on **Task B** and did not apply this pipeline to Task A.
+
+### Citation
+
+If you find this work useful, please cite:
+
+```bibtex
+@misc{tedeschini2026aiwizardsmultipridehierarchicalapproach,
+  title        = {AIWizards at MULTIPRIDE: A Hierarchical Approach to Slur Reclamation Detection},
+  author       = {Luca Tedeschini and Matteo Fasulo},
+  year         = {2026},
+  eprint       = {2602.12818},
+  archivePrefix= {arXiv},
+  primaryClass = {cs.CL},
+  url          = {https://arxiv.org/abs/2602.12818}
+}
