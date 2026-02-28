@@ -44,7 +44,7 @@ Our Text Encoder is trained using the same methodology and architecture as the U
 ### Feature Fusion
 To perform the final classification, our architecture takes the hidden states from both encoders and weights them via a gating mechanism to create a fused hidden state. A final classifier processes this fused representation to generate the prediction.
 
-*Further details can be found in the associated paper \[LINK ARXIV\]*
+*Further details can be found in the associated paper https://arxiv.org/abs/2602.12818*
 
 ## Final Considerations
 We believe that user *bios* contain intrinsically richer information than tweets alone. Consequently, we focused exclusively on **Task B** and did not apply this pipeline to Task A.
