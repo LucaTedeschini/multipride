@@ -3,342 +3,281 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="AIWizards at MULTIPRIDE: A Hierarchical Approach to Slur Reclamation Detection">
+
+  <meta name="title" content="AIWizards at MULTIPRIDE: A Hierarchical Approach to Slur Reclamation Detection">
+  <meta name="description" content="A dual encoder approach for MULTIPRIDE Task B, combining tweet text and user bio representations with gated feature fusion.">
+  <meta name="keywords" content="MULTIPRIDE, EVALITA 2026, slur reclamation, natural language processing, multilingual classification, social media, LGBTQ+">
   <meta name="author" content="Luca Tedeschini, Matteo Fasulo">
-  <title>AIWizards at MULTIPRIDE</title>
+  <meta name="robots" content="index, follow">
+  <meta name="language" content="English">
+
+  <meta property="og:type" content="article">
+  <meta property="og:site_name" content="AIWizards">
+  <meta property="og:title" content="AIWizards at MULTIPRIDE">
+  <meta property="og:description" content="A hierarchical approach to slur reclamation detection using user and text representations for multilingual social media classification.">
+  <meta property="og:url" content="https://nlp-ai-wizards.github.io/multipride/">
+  <meta property="og:image" content="https://raw.githubusercontent.com/NLP-AI-Wizards/multipride/main/model_architecture_bg.png">
+  <meta property="og:image:alt" content="Dual encoder architecture for MULTIPRIDE Task B">
+  <meta property="article:published_time" content="2026-01-01T00:00:00.000Z">
+  <meta property="article:author" content="Luca Tedeschini">
+  <meta property="article:author" content="Matteo Fasulo">
+  <meta property="article:section" content="Research">
+  <meta property="article:tag" content="natural language processing">
+  <meta property="article:tag" content="slur reclamation">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="AIWizards at MULTIPRIDE">
+  <meta name="twitter:description" content="A dual encoder approach for MULTIPRIDE Task B, combining tweet text and user bio representations with gated feature fusion.">
+  <meta name="twitter:image" content="https://raw.githubusercontent.com/NLP-AI-Wizards/multipride/main/model_architecture_bg.png">
+  <meta name="twitter:image:alt" content="Dual encoder architecture for MULTIPRIDE Task B">
+
+  <meta name="citation_title" content="AIWizards at MULTIPRIDE: A Hierarchical Approach to Slur Reclamation Detection">
+  <meta name="citation_author" content="Tedeschini, Luca">
+  <meta name="citation_author" content="Fasulo, Matteo">
+  <meta name="citation_publication_date" content="2026">
+  <meta name="citation_conference_title" content="EVALITA 2026">
+  <meta name="citation_pdf_url" content="https://ceur-ws.org/Vol-4195/20.pdf">
+  <meta name="citation_arxiv_id" content="2602.12818">
+
+  <meta name="theme-color" content="#2563eb">
+  <meta name="msapplication-TileColor" content="#2563eb">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
 
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+  <link rel="preconnect" href="https://ajax.googleapis.com">
+  <link rel="preconnect" href="https://cdn.jsdelivr.net">
 
-  <style>
-    :root {
-      --text: #18202a;
-      --muted: #5b6778;
-      --line: #d9e0e8;
-      --paper: #ffffff;
-      --soft: #f5f7fa;
-      --accent: #2f6f73;
-      --accent-dark: #214f52;
-      --link: #245f9d;
-      --shadow: 0 16px 36px rgba(24, 32, 42, 0.08);
-    }
+  <title>AIWizards at MULTIPRIDE | Academic Research</title>
 
-    * {
-      box-sizing: border-box;
-    }
+  <link rel="icon" type="image/x-icon" href="static/images/favicon.ico">
+  <link rel="apple-touch-icon" href="static/images/favicon.ico">
 
-    body {
-      margin: 0;
-      color: var(--text);
-      background: var(--paper);
-      font-family: Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      line-height: 1.6;
-    }
+  <link rel="stylesheet" href="static/css/bulma.min.css">
+  <link rel="stylesheet" href="static/css/index.css">
+  <link rel="preload" href="static/css/bulma-carousel.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link rel="preload" href="static/css/bulma-slider.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link rel="preload" href="static/css/fontawesome.all.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <link rel="preload" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css" as="style" onload="this.onload=null;this.rel='stylesheet'">
+  <noscript>
+    <link rel="stylesheet" href="static/css/bulma-carousel.min.css">
+    <link rel="stylesheet" href="static/css/bulma-slider.min.css">
+    <link rel="stylesheet" href="static/css/fontawesome.all.min.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/jpswalsh/academicons@1/css/academicons.min.css">
+  </noscript>
 
-    a {
-      color: var(--link);
-      text-decoration: none;
-    }
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 
-    a:hover {
-      text-decoration: underline;
-    }
+  <script defer src="https://ajax.googleapis.com/ajax/libs/jquery/3.5.1/jquery.min.js"></script>
+  <script defer src="static/js/fontawesome.all.min.js"></script>
+  <script defer src="static/js/bulma-carousel.min.js"></script>
+  <script defer src="static/js/bulma-slider.min.js"></script>
+  <script defer src="static/js/index.js"></script>
 
-    .hero {
-      border-bottom: 1px solid var(--line);
-      background:
-        linear-gradient(135deg, rgba(47, 111, 115, 0.12), rgba(224, 235, 228, 0.52)),
-        var(--soft);
-    }
-
-    .wrap {
-      width: min(1040px, calc(100% - 40px));
-      margin: 0 auto;
-    }
-
-    .hero-inner {
-      padding: 76px 0 48px;
-      text-align: center;
-    }
-
-    .venue {
-      margin: 0 0 14px;
-      color: var(--accent-dark);
-      font-size: 0.95rem;
-      font-weight: 700;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-    }
-
-    h1 {
-      max-width: 900px;
-      margin: 0 auto 20px;
-      font-size: clamp(2.2rem, 5vw, 4.5rem);
-      line-height: 1.05;
-      letter-spacing: 0;
-    }
-
-    .subtitle {
-      max-width: 780px;
-      margin: 0 auto 26px;
-      color: var(--muted);
-      font-size: clamp(1rem, 2vw, 1.25rem);
-    }
-
-    .authors {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 10px 20px;
-      margin-bottom: 28px;
-      font-size: 1.05rem;
-      font-weight: 600;
-    }
-
-    .buttons {
-      display: flex;
-      flex-wrap: wrap;
-      justify-content: center;
-      gap: 12px;
-    }
-
-    .button {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 44px;
-      padding: 10px 18px;
-      border: 1px solid transparent;
-      border-radius: 6px;
-      background: var(--accent);
-      color: #fff;
-      font-weight: 700;
-      text-decoration: none;
-      box-shadow: 0 8px 18px rgba(47, 111, 115, 0.18);
-    }
-
-    .button:hover {
-      background: var(--accent-dark);
-      text-decoration: none;
-    }
-
-    .button.secondary {
-      border-color: var(--line);
-      background: #fff;
-      color: var(--text);
-      box-shadow: none;
-    }
-
-    .button.secondary:hover {
-      background: var(--soft);
-    }
-
-    main {
-      padding: 48px 0 72px;
-    }
-
-    section {
-      margin: 0 auto 46px;
-    }
-
-    h2 {
-      margin: 0 0 14px;
-      font-size: 1.55rem;
-      line-height: 1.25;
-      letter-spacing: 0;
-    }
-
-    p {
-      margin: 0 0 16px;
-    }
-
-    .lead {
-      color: var(--muted);
-      font-size: 1.08rem;
-    }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-      gap: 18px;
-      margin-top: 20px;
-    }
-
-    .card {
-      min-height: 180px;
-      padding: 22px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-      box-shadow: var(--shadow);
-    }
-
-    .card h3 {
-      margin: 0 0 10px;
-      font-size: 1.05rem;
-    }
-
-    .card p {
-      color: var(--muted);
-      font-size: 0.96rem;
-    }
-
-    .figure {
-      margin-top: 22px;
-      overflow: hidden;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #fff;
-      box-shadow: var(--shadow);
-    }
-
-    .figure img {
-      display: block;
-      width: 100%;
-      height: auto;
-    }
-
-    .caption {
-      padding: 12px 16px 14px;
-      color: var(--muted);
-      font-size: 0.92rem;
-      border-top: 1px solid var(--line);
-    }
-
-    pre {
-      overflow-x: auto;
-      margin: 18px 0 0;
-      padding: 18px;
-      border: 1px solid var(--line);
-      border-radius: 8px;
-      background: #101820;
-      color: #eef6f6;
-      font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
-      font-size: 0.9rem;
-      line-height: 1.55;
-    }
-
-    .notice {
-      padding: 18px 20px;
-      border-left: 4px solid var(--accent);
-      background: var(--soft);
-      color: var(--muted);
-    }
-
-    footer {
-      padding: 28px 0;
-      border-top: 1px solid var(--line);
-      color: var(--muted);
-      font-size: 0.92rem;
-      text-align: center;
-    }
-
-    @media (max-width: 760px) {
-      .wrap {
-        width: min(100% - 28px, 1040px);
-      }
-
-      .hero-inner {
-        padding: 54px 0 36px;
-      }
-
-      .grid {
-        grid-template-columns: 1fr;
-      }
-
-      .button {
-        width: 100%;
-      }
-    }
-  </style>
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "ScholarlyArticle",
+    "headline": "AIWizards at MULTIPRIDE: A Hierarchical Approach to Slur Reclamation Detection",
+    "description": "A dual encoder approach for MULTIPRIDE Task B, combining tweet text and user bio representations with gated feature fusion.",
+    "author": [
+      {"@type": "Person", "name": "Luca Tedeschini"},
+      {"@type": "Person", "name": "Matteo Fasulo"}
+    ],
+    "datePublished": "2026-01-01",
+    "publisher": {"@type": "Organization", "name": "EVALITA 2026"},
+    "url": "https://nlp-ai-wizards.github.io/multipride/",
+    "image": "https://raw.githubusercontent.com/NLP-AI-Wizards/multipride/main/model_architecture_bg.png",
+    "keywords": ["MULTIPRIDE", "slur reclamation", "natural language processing", "multilingual classification", "social media"],
+    "abstract": "This work addresses MULTIPRIDE Task B, a binary classification setting where systems identify whether LGBTQ+ related terms are used with reclamatory intent by combining tweet text and user bio context.",
+    "citation": "Tedeschini, Luca and Fasulo, Matteo. AIWizards at MULTIPRIDE: A Hierarchical Approach to Slur Reclamation Detection. EVALITA 2026.",
+    "isAccessibleForFree": true,
+    "mainEntity": {"@type": "WebPage", "@id": "https://nlp-ai-wizards.github.io/multipride/"}
+  }
+  </script>
 </head>
 <body>
-  <header class="hero">
-    <div class="wrap hero-inner">
-      <p class="venue">MULTIPRIDE at EVALITA 2026</p>
-      <h1>AIWizards at MULTIPRIDE</h1>
-      <p class="subtitle">A hierarchical approach to slur reclamation detection using user and text representations for multilingual social media classification.</p>
+  <button class="scroll-to-top" onclick="scrollToTop()" title="Scroll to top" aria-label="Scroll to top">
+    <i class="fas fa-chevron-up"></i>
+  </button>
 
-      <div class="authors" aria-label="Authors">
-        <a href="mailto:luca.tedeschini00@gmail.com">Luca Tedeschini</a>
-        <a href="mailto:mat.fasulo@gmail.com">Matteo Fasulo</a>
-      </div>
+  <main id="main-content">
+    <section class="hero publication-header">
+      <div class="hero-body">
+        <div class="container is-max-desktop">
+          <div class="columns is-centered">
+            <div class="column has-text-centered">
+              <h1 class="title is-1 publication-title">AIWizards at MULTIPRIDE</h1>
+              <p class="subtitle is-4">A Hierarchical Approach to Slur Reclamation Detection</p>
 
-      <nav class="buttons" aria-label="Project links">
-        <a class="button" href="https://ceur-ws.org/Vol-4195/20.pdf">Paper</a>
-        <a class="button secondary" href="https://github.com/NLP-AI-Wizards/multipride">Code</a>
-        <a class="button secondary" href="https://multipride-evalita.github.io/">Task</a>
-      </nav>
-    </div>
-  </header>
+              <div class="is-size-5 publication-authors">
+                <span class="author-block">
+                  <a href="mailto:luca.tedeschini00@gmail.com">Luca Tedeschini</a>,
+                </span>
+                <span class="author-block">
+                  <a href="mailto:mat.fasulo@gmail.com">Matteo Fasulo</a>
+                </span>
+              </div>
 
-  <main class="wrap">
-    <section aria-labelledby="abstract">
-      <h2 id="abstract">Abstract</h2>
-      <p class="lead">
-        This project addresses MULTIPRIDE, a binary classification task focused on detecting whether LGBTQ+ related terms are used with reclamatory intent. The system targets cases where potential slurs or derogatory terms are used non-discriminatorily, for example as self-identification or as an expression of community belonging.
-      </p>
-      <p>
-        Our contribution focuses on Task B, where user bios are available alongside tweet text. We propose a dual encoder architecture that combines a custom user encoder and text encoder through gated feature fusion, producing a representation for final reclamation classification.
-      </p>
-    </section>
+              <div class="is-size-5 publication-authors">
+                <span class="author-block">MULTIPRIDE at EVALITA 2026</span>
+              </div>
 
-    <section aria-labelledby="method">
-      <h2 id="method">Method</h2>
-      <div class="grid">
-        <article class="card">
-          <h3>User Encoder</h3>
-          <p>Encodes profile information from user bios to capture contextual signals that may help distinguish reclamatory usage from discriminatory usage.</p>
-        </article>
-        <article class="card">
-          <h3>Text Encoder</h3>
-          <p>Models tweet content using task labels from the official MULTIPRIDE data, focusing on the language surrounding potentially reclaimed terms.</p>
-        </article>
-        <article class="card">
-          <h3>Gated Fusion</h3>
-          <p>Combines user and text hidden states through a gating mechanism before the final binary classification layer.</p>
-        </article>
-      </div>
-
-      <figure class="figure">
-        <img src="https://raw.githubusercontent.com/NLP-AI-Wizards/multipride/main/model_architecture_bg.png" alt="Dual encoder model architecture for MULTIPRIDE">
-        <figcaption class="caption">Overview of the dual encoder architecture used for Task B.</figcaption>
-      </figure>
-    </section>
-
-    <section aria-labelledby="resources">
-      <h2 id="resources">Resources</h2>
-      <p>
-        Read the paper in the CEUR-WS proceedings or explore the implementation, configurations, and reproducibility notes in the public repository.
-      </p>
-      <div class="buttons">
-        <a class="button" href="https://ceur-ws.org/Vol-4195/20.pdf">Open Paper</a>
-        <a class="button secondary" href="https://github.com/NLP-AI-Wizards/multipride">View Code</a>
+              <div class="column has-text-centered">
+                <div class="publication-links">
+                  <span class="link-block">
+                    <a href="https://ceur-ws.org/Vol-4195/20.pdf" target="_blank" class="external-link button is-normal is-rounded is-dark">
+                      <span class="icon"><i class="fas fa-file-pdf"></i></span>
+                      <span>Paper</span>
+                    </a>
+                  </span>
+                  <span class="link-block">
+                    <a href="https://arxiv.org/abs/2602.12818" target="_blank" class="external-link button is-normal is-rounded is-dark">
+                      <span class="icon"><i class="ai ai-arxiv"></i></span>
+                      <span>arXiv</span>
+                    </a>
+                  </span>
+                  <span class="link-block">
+                    <a href="https://github.com/NLP-AI-Wizards/multipride" target="_blank" class="external-link button is-normal is-rounded is-dark">
+                      <span class="icon"><i class="fab fa-github"></i></span>
+                      <span>Code</span>
+                    </a>
+                  </span>
+                  <span class="link-block">
+                    <a href="https://multipride-evalita.github.io/" target="_blank" class="external-link button is-normal is-rounded is-dark">
+                      <span class="icon"><i class="fas fa-tasks"></i></span>
+                      <span>Task</span>
+                    </a>
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
     </section>
 
-    <section aria-labelledby="ethics">
-      <h2 id="ethics">Ethical Note</h2>
-      <p class="notice">
-        The user encoder is intended only to improve contextual modeling for the shared task. It is not designed or endorsed as a tool for identifying, inferring, or exposing a user's LGBTQ+ identity.
-      </p>
+    <section class="section hero is-light">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered has-text-centered">
+          <div class="column is-four-fifths">
+            <h2 class="title is-3">Abstract</h2>
+            <div class="content has-text-justified">
+              <p>
+                This project addresses MULTIPRIDE, a binary classification task focused on detecting whether LGBTQ+ related terms are used with reclamatory intent. The system targets cases where potential slurs or derogatory terms are used non-discriminatorily, for example as self-identification or as an expression of community belonging.
+              </p>
+              <p>
+                Our contribution focuses on Task B, where user bios are available alongside tweet text. We propose a dual encoder architecture that combines a custom user encoder and text encoder through gated feature fusion, producing a representation for final reclamation classification.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
     </section>
 
-    <section aria-labelledby="citation">
-      <h2 id="citation">Citation</h2>
-      <pre><code>@inproceedings{tedeschini2026aiwizardsmultipride,
-  title     = {AIWizards at MULTIPRIDE: A Hierarchical Approach to Slur Reclamation Detection},
-  author    = {Tedeschini, Luca and Fasulo, Matteo},
-  year      = {2026},
-  url       = {https://ceur-ws.org/Vol-4195/20.pdf}
+    <section class="section">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered">
+          <div class="column is-full-width">
+            <h2 class="title is-3">Method</h2>
+            <div class="content">
+              <p>
+                The architecture combines contextual signals from user bios with the tweet text that contains the potentially reclaimed term. Both encoders produce hidden representations that are weighted through a gating mechanism before final binary classification.
+              </p>
+            </div>
+            <div class="columns">
+              <div class="column">
+                <div class="box">
+                  <h3 class="title is-5">User Encoder</h3>
+                  <p>Encodes profile information from user bios to capture contextual signals that may help distinguish reclamatory usage from discriminatory usage.</p>
+                </div>
+              </div>
+              <div class="column">
+                <div class="box">
+                  <h3 class="title is-5">Text Encoder</h3>
+                  <p>Models tweet content using task labels from the official MULTIPRIDE data, focusing on the language surrounding potentially reclaimed terms.</p>
+                </div>
+              </div>
+              <div class="column">
+                <div class="box">
+                  <h3 class="title is-5">Gated Fusion</h3>
+                  <p>Combines user and text hidden states through a gating mechanism before the final binary classification layer.</p>
+                </div>
+              </div>
+            </div>
+            <figure class="publication-banner">
+              <img src="static/images/model_architecture_bg.png" alt="Dual encoder model architecture for MULTIPRIDE Task B">
+            </figure>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section hero is-light">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered">
+          <div class="column is-four-fifths">
+            <h2 class="title is-3">Task Setting</h2>
+            <div class="content">
+              <p>
+                MULTIPRIDE includes a text-only Task A and a contextual Task B where user bios are available in addition to tweet text. This work focuses on Task B for Italian and Spanish, using bio context to enrich the representation available to the classifier.
+              </p>
+              <p>
+                Because the official dataset is not publicly released by the organizers, the repository includes a mock dataset so the code can run and the pipeline can be inspected.
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section">
+      <div class="container is-max-desktop">
+        <div class="columns is-centered">
+          <div class="column is-four-fifths">
+            <h2 class="title is-3">Ethical Note</h2>
+            <div class="notification is-info is-light">
+              The user encoder is intended only to improve contextual modeling for the shared task. It is not designed or endorsed as a tool for identifying, inferring, or exposing a user's LGBTQ+ identity.
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="BibTeX">
+      <div class="container is-max-desktop content">
+        <div class="bibtex-header">
+          <h2 class="title">BibTeX</h2>
+          <button class="copy-bibtex-btn" onclick="copyBibTeX()" title="Copy BibTeX to clipboard">
+            <i class="fas fa-copy"></i>
+            <span class="copy-text">Copy</span>
+          </button>
+        </div>
+        <pre id="bibtex-code"><code>@misc{tedeschini2026aiwizardsmultipridehierarchicalapproach,
+  title        = {AIWizards at MULTIPRIDE: A Hierarchical Approach to Slur Reclamation Detection},
+  author       = {Luca Tedeschini and Matteo Fasulo},
+  year         = {2026},
+  eprint       = {2602.12818},
+  archivePrefix= {arXiv},
+  primaryClass = {cs.CL},
+  url          = {https://arxiv.org/abs/2602.12818}
 }</code></pre>
+      </div>
     </section>
   </main>
 
-  <footer>
-    <div class="wrap">
-      AIWizards at MULTIPRIDE · EVALITA 2026
+  <footer class="footer">
+    <div class="container">
+      <div class="columns is-centered">
+        <div class="column is-8">
+          <div class="content has-text-centered">
+            <p>
+              This page was built using the <a href="https://github.com/eliahuhorwitz/Academic-project-page-template" target="_blank">Academic Project Page Template</a>, adopted from the <a href="https://nerfies.github.io" target="_blank">Nerfies</a> project page.
+            </p>
+          </div>
+        </div>
+      </div>
     </div>
   </footer>
 </body>
