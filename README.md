@@ -48,7 +48,7 @@ Our Text Encoder is trained using the same methodology and architecture as the U
 ### Feature Fusion
 To perform the final classification, our architecture takes the hidden states from both encoders and weights them via a gating mechanism to create a fused hidden state. A final classifier processes this fused representation to generate the prediction.
 
-*Further details can be found in the associated paper https://arxiv.org/abs/2602.12818*
+*Further details can be found in the associated paper https://ceur-ws.org/Vol-4195/20.pdf*
 
 ## Final Considerations
 We believe that user *bios* contain intrinsically richer information than tweets alone. Consequently, we focused exclusively on **Task B** and did not apply this pipeline to Task A.
@@ -58,12 +58,14 @@ We believe that user *bios* contain intrinsically richer information than tweets
 If you find this work useful, please cite:
 
 ```bibtex
-@misc{tedeschini2026aiwizardsmultipridehierarchicalapproach,
-  title        = {AIWizards at MULTIPRIDE: A Hierarchical Approach to Slur Reclamation Detection},
-  author       = {Luca Tedeschini and Matteo Fasulo},
-  year         = {2026},
-  eprint       = {2602.12818},
-  archivePrefix= {arXiv},
-  primaryClass = {cs.CL},
-  url          = {https://arxiv.org/abs/2602.12818}
+@inproceedings{tedeschini2026aiwizardsmultipride,
+  title     = {AIWizards at MULTIPRIDE: A Hierarchical Approach to Slur Reclamation Detection},
+  author    = {Tedeschini, Luca and Fasulo, Matteo},
+  booktitle = {Proceedings of the 9th Evaluation Campaign of Natural Language Processing and Speech Tools for Italian. Final Workshop (EVALITA 2026)},
+  series    = {CEUR Workshop Proceedings},
+  volume    = {4195},
+  address   = {Bari, Italy},
+  publisher = {CEUR-WS.org},
+  year      = {2026},
+  url       = {https://ceur-ws.org/Vol-4195/20.pdf}
 }
